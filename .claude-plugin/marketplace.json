@@ -1,0 +1,17 @@
+{
+  "name": "getmarrow",
+  "description": "Marrow plugins for Claude Code: approvals, policy and receipts for agent actions.",
+  "owner": {
+    "name": "Marrow",
+    "url": "https://getmarrow.ai"
+  },
+  "plugins": [
+    {
+      "name": "marrow",
+      "source": "./plugins/marrow",
+      "description": "Marrow's approval hooks, MCP server and skill, pinned to @getmarrow/mcp 3.9.100. No account or key is needed to install.",
+      "category": "security",
+      "tags": ["governance", "approvals", "hooks", "mcp"]
+    }
+  ]
+}

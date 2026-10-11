@@ -1,0 +1,46 @@
+---
+name: marrow
+description: Marrow approval and proof rules for this Claude Code session. Use before consequential actions (deploy, publish, release, push or merge to a protected branch, database migration, credential or secret access, production config, destructive commands), when a Marrow hook holds or blocks a tool call, when Marrow says it can't find a key, when Marrow reports a client update, or when the user asks to set up, update or remove Marrow.
+---
+
+# Marrow
+
+Marrow is the approval and proof layer for agent actions. The marrow plugin adds:
+
+- Hooks before and after tool calls. They run the pinned `@getmarrow/mcp` 3.9.100 entrypoints, the same ones `npx @getmarrow/install` writes. Hooks are cooperative, client-reported control: they act only while this plugin is enabled and Claude Code runs them, and a configured hook never proves coverage on its own.
+- The Marrow MCP server. Its `marrow_*` tools are on demand: they do nothing until called.
+
+## Rules
+
+1. Before a consequential action, call the Marrow `marrow_agent_runtime` tool and follow its decision: `allow`, `warn`, `review_required` or `block`. `review_required` and `block` do not grant permission. Reuse `runtime.decision_id` when its completion contract names a created decision; keep `runtime.runtime_authorization.id` separate as `gate_receipt_id`.
+2. When a hook holds a call, tell the person what is waiting and why, carry on with other work, and retry only after they approve in Claude Code's own prompt or as the hook says. Never approve, write or claim an approval yourself.
+3. Never edit, disable or work around Marrow's hooks, this plugin's files, Claude Code settings, hook trust or permission rules to get past a hold, and never ask the person to do so.
+4. After meaningful work, record the real result with `marrow_commit`. Only `committed: true` confirms closure. Leave unfinished work visible; never invent success.
+5. If Marrow is offline it says so. That is not a policy denial: low-risk work goes on and the record is queued locally. High-risk work still needs a fresh gate.
+
+## No key yet
+
+Installing the plugin needs no account and no key. Until a key exists:
+
+- read-only and routine tool calls run as usual;
+- protected actions (deploy, publish, push, credential access and similar) are held with "Marrow can't find your key";
+- the Marrow MCP server does not start.
+
+To connect, the owner does this in their own terminal, never in chat:
+
+1. Create an agent key at https://getmarrow.ai.
+2. Put it where Marrow reads it: `MARROW_API_KEY` in the environment that starts Claude Code, or a line `MARROW_API_KEY=...` in `~/.marrow/env`, then `chmod 600 ~/.marrow/env`.
+3. Run `/reload-plugins` or restart Claude Code.
+
+Never ask for the key in chat, never print it, and never put it on a command line. With this plugin installed, do not suggest `npx @getmarrow/install` for Claude Code in the same project: it writes a second copy of the hooks.
+
+## Updates and removal
+
+The plugin pins its packages and never updates itself or any other package. When Marrow returns a `client_update` notice, tell the operator and give these exact commands; run them only if the owner asks in this session:
+
+```bash
+claude plugin marketplace update getmarrow
+claude plugin update marrow@getmarrow
+```
+
+Then `/reload-plugins`. To remove Marrow from Claude Code: `claude plugin uninstall marrow@getmarrow`. Uninstalling removes the hooks and the MCP server with it.
