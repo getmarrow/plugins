@@ -1,13 +1,21 @@
 'use strict';
 // Consistency and safety checks for the marrow plugin. No network, no writes.
-//   node tools/check.cjs [path/to/marrow-install/src/pins.js] [path/to/marrow-mcp/src/cli.ts]
-// With pins.js, the plugin's pins must equal the @getmarrow/install release's pins. With cli.ts, the
-// matcher's exempt tool names must equal that release's default (primary) tool set.
+//   node tools/check.cjs [marrow-install/src/pins.js] [marrow-mcp/src/cli.ts or src/tool-catalog.ts] [marrow-mcp/dist/hook-contract.js ...]
+// With pins.js, the plugin's pins must equal the @getmarrow/install release's pins. With cli.ts (3.9.101)
+// or tool-catalog.ts (3.9.102 on), the matcher's exempt tool names must equal that release's default
+// (primary) tool set. Each built hook-contract.js adds that release's NATIVE_HOOK_MATCHER to the
+// never-looser comparison.
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 
 const repo = path.resolve(__dirname, '..');
+// --installer-cursor-hooks <file>: the .cursor/hooks.json that @getmarrow/install writes (generated
+// offline from the release), compared field by field with the Cursor plugin's hooks.
+const argv = process.argv.slice(2);
+const flag = argv.indexOf('--installer-cursor-hooks');
+const installerCursorHooks = flag >= 0 ? argv.splice(flag, 2)[1] : null;
+process.argv = [process.argv[0], process.argv[1], ...argv];
 const plugin = path.join(repo, 'plugins', 'marrow');
 const read = (file) => fs.readFileSync(path.join(repo, file), 'utf8');
 const json = (file) => JSON.parse(read(file));
@@ -30,13 +38,17 @@ const pins = json('plugins/marrow/scripts/mcp-manifest.json');
 const hooks = json('plugins/marrow/hooks/hooks.json');
 const mcp = json('plugins/marrow/.mcp.json');
 const launcher = read('plugins/marrow/scripts/marrow-launch.cjs');
+const cursorManifest = json('plugins/marrow-cursor/.cursor-plugin/plugin.json');
+const cursorMarket = json('.cursor-plugin/marketplace.json');
+const cursorHooks = json('plugins/marrow-cursor/hooks/hooks.json');
+const cursorMcp = json('plugins/marrow-cursor/mcp.json');
 const sessionCheck = read('plugins/marrow/scripts/marrow-session-check.cjs');
 
 const LAUNCH = '${CLAUDE_PLUGIN_ROOT}/scripts/marrow-launch.cjs';
 const CHECK = '${CLAUDE_PLUGIN_ROOT}/scripts/marrow-session-check.cjs';
-// @getmarrow/mcp 3.9.100 NATIVE_HOOK_MATCHER, as `npx @getmarrow/install` writes it.
+// @getmarrow/mcp 3.9.100 and 3.9.101 NATIVE_HOOK_MATCHER, as `npx @getmarrow/install` writes it.
 const MASTER_MATCHER = 'Bash|Edit|Write|MultiEdit|Read|Glob|Grep|Search|WebSearch|Task|functions\\.(?!mcp__marrow__marrow_).*|mcp__(?!marrow__marrow_).*';
-// The 17 tools @getmarrow/mcp 3.9.100 serves by default (PRIMARY_TOOL_NAMES in src/cli.ts). In this
+// The 17 tools @getmarrow/mcp 3.9.100 and 3.9.101 serve by default (PRIMARY_TOOL_NAMES in src/cli.ts). In this
 // plugin they are named mcp__plugin_marrow_marrow__<tool>.
 const OWN_TOOLS = ['marrow_agent_runtime', 'marrow_agent_status', 'marrow_arbitrate', 'marrow_buyer_proof',
   'marrow_commit', 'marrow_completion_contracts', 'marrow_coordinate', 'marrow_decision_brief',
@@ -125,12 +137,82 @@ check('hooks are exactly the installer\'s Claude Code events, entrypoints and fi
   assert.deepStrictEqual(start, [{ matcher: 'startup|resume', hooks: [{ type: 'command', command: 'node', args: [CHECK], timeout: 5 }] }]);
 });
 
+// Cursor: the hooks @getmarrow/install 0.1.69 writes with host approvals (MCP 3.9.99 and later), with
+// the npx command swapped for the plugin's launcher. beforeMCPExecution has no own-tool fast path:
+// every MCP call goes to the pinned hook, which decides Marrow's own tools itself.
+const CURSOR_PRE_MATCHER = 'Write|Delete|Task|Read|Glob|Grep|Search|WebSearch|List|MCP:(?!marrow(?:_.*|:marrow_.*)$).*';
+const CURSOR_MATCHER = 'Shell|Write|Delete|Task|Read|Glob|Grep|Search|WebSearch|List|MCP:(?!marrow(?:_.*|:marrow_.*)$).*';
+const CURSOR_LAUNCH = './scripts/marrow-launch.cjs';
+const GATE = { timeout: 15, failClosed: true, async: false };
+const CURSOR_EXPECTED = {
+  preToolUse: { entry: 'cursor-pre-action-hook', matcher: CURSOR_PRE_MATCHER, ...GATE },
+  postToolUse: { entry: 'cursor-hook', matcher: CURSOR_MATCHER, timeout: 5 },
+  postToolUseFailure: { entry: 'cursor-hook', matcher: CURSOR_MATCHER, timeout: 5 },
+  stop: { entry: 'cursor-session-hook', timeout: 3 },
+  beforeShellExecution: { entry: 'cursor-pre-action-hook', ...GATE },
+  beforeMCPExecution: { entry: 'cursor-pre-action-hook', ...GATE },
+  afterShellExecution: { entry: 'cursor-hook', timeout: 5 },
+  afterMCPExecution: { entry: 'cursor-hook', timeout: 5 },
+  sessionStart: { entry: 'cursor-session-hook', timeout: 5 },
+  beforeSubmitPrompt: { entry: 'cursor-context-hook', timeout: 5 },
+};
+check('Cursor marketplace and manifest name the plugin "marrow" with a pinned version', () => {
+  assert.strictEqual(cursorMarket.name, 'getmarrow');
+  assert.deepStrictEqual(cursorMarket.plugins.map((p) => [p.name, p.source]), [['marrow', './plugins/marrow-cursor']]);
+  assert.strictEqual(cursorManifest.name, 'marrow');
+  assert.match(cursorManifest.version, /^\d+\.\d+\.\d+$/);
+  assert.strictEqual(cursorManifest.license, 'MIT');
+  for (const key of ['variables', 'hooks', 'mcpServers', 'skills', 'rules']) assert.strictEqual(cursorManifest[key], undefined, `${key}: default discovery only`);
+});
+check('Cursor hooks are exactly the installer\'s events, matchers, timeouts and failClosed fields', () => {
+  assert.strictEqual(cursorHooks.version, 1);
+  assert.deepStrictEqual(Object.keys(cursorHooks.hooks).sort(), Object.keys(CURSOR_EXPECTED).sort());
+  for (const [event, want] of Object.entries(CURSOR_EXPECTED)) {
+    const { entry, ...fields } = want;
+    assert.deepStrictEqual(cursorHooks.hooks[event], [{ command: `${CURSOR_LAUNCH} ${entry}`, ...fields }], event);
+  }
+  if (!installerCursorHooks) return;
+  const installer = JSON.parse(fs.readFileSync(installerCursorHooks, 'utf8'));
+  assert.strictEqual(installer.version, 1);
+  assert.deepStrictEqual(Object.keys(installer.hooks).sort(), Object.keys(CURSOR_EXPECTED).sort(), 'same events as the installer');
+  for (const [event, entries] of Object.entries(installer.hooks)) {
+    assert.strictEqual(entries.length, 1, event);
+    const { command, ...fields } = entries[0];
+    const { command: ours, ...ourFields } = cursorHooks.hooks[event][0];
+    assert.deepStrictEqual(ourFields, fields, `${event} fields`);
+    const sub = event === 'beforeMCPExecution' ? 'cursor-pre-action-hook'
+      : command.match(/marrow-mcp (cursor-[a-z-]+)$/)[1];
+    assert.strictEqual(ours, `${CURSOR_LAUNCH} ${sub}`, `${event} entrypoint`);
+  }
+});
+check('Cursor MCP server runs the same launcher, with no key or env in the config', () => {
+  assert.deepStrictEqual(cursorMcp, { mcpServers: { marrow: { command: 'node', args: ['${CURSOR_PLUGIN_ROOT}/scripts/marrow-launch.cjs'] } } });
+});
+check('Cursor plugin ships the same pinned runtime files byte for byte', () => {
+  for (const file of ['package.json', 'package-lock.json', 'LICENSE', 'scripts/marrow-launch.cjs', 'scripts/mcp-manifest.json']) {
+    assert.ok(read(`plugins/marrow/${file}`) === read(`plugins/marrow-cursor/${file}`), file);
+  }
+  if (process.platform !== 'win32') {
+    for (const dir of ['marrow', 'marrow-cursor']) {
+      assert.ok(fs.statSync(path.join(repo, 'plugins', dir, 'scripts', 'marrow-launch.cjs')).mode & 0o100, `${dir} launcher is executable`);
+    }
+  }
+  assert.ok(launcher.startsWith('#!/usr/bin/env node\n'));
+  assert.ok(!fs.existsSync(path.join(repo, 'plugins', 'marrow', '.cursor-plugin')) && !fs.existsSync(path.join(repo, 'plugins', 'marrow-cursor', '.claude-plugin')), 'one host per plugin folder');
+});
+check('Cursor launcher allowlist equals the entrypoints in the Cursor hooks', () => {
+  const block = launcher.slice(launcher.indexOf('CURSOR ? ['), launcher.indexOf('] : ['));
+  const allow = [...block.matchAll(/'(cursor-[a-z-]+)'/g)].map((m) => m[1]).sort();
+  assert.deepStrictEqual(allow, [...new Set(Object.values(CURSOR_EXPECTED).map((v) => v.entry))].sort());
+});
+
 check('MCP server runs the same launcher with no entrypoint', () => {
   assert.deepStrictEqual(mcp, { mcpServers: { marrow: { command: 'node', args: [LAUNCH] } } });
 });
 
 check('launcher allowlist equals the entrypoints in hooks.json', () => {
   const allow = [...launcher.matchAll(/^ {2}'(claude-[a-z-]+)',$/gm)].map((m) => m[1]).sort();
+  assert.ok(/new Set\(CURSOR === CLAUDE \? \[\]/.test(launcher), 'no entrypoint when the host is ambiguous');
   const used = [...new Set(Object.values(EXPECTED).map((v) => v.entry))].sort();
   assert.deepStrictEqual(allow, used);
 });
@@ -144,7 +226,9 @@ check('no unpinned or latest package spec, no npx in hook or MCP config', () => 
   };
   collect(hooks.hooks, '');
   collect(mcp.mcpServers, '');
-  assert.ok(commands.length >= 9);
+  collect(cursorHooks.hooks, '');
+  collect(cursorMcp.mcpServers, '');
+  assert.ok(commands.length >= 20);
   for (const text of commands) {
     assert.ok(!/@latest\b/.test(text), `${text} names @latest`);
     assert.ok(!/\bnpx\b/.test(text), `${text} runs npx`);
@@ -163,7 +247,8 @@ check('launcher runs only a manifest-verified copy and fails closed for the pre-
   assert.ok(/verifiedEntry\(manifest, path\.join\(stage, 'node_modules'\)\)/.test(launcher), 'staged copy verified before use');
   assert.ok(/permissionDecision: 'deny'/.test(launcher), 'pre-action hook holds the call when no verified copy loads');
   const requires = [...launcher.matchAll(/require\(([^)]+)\)/g)].map((m) => m[1]).sort();
-  assert.deepStrictEqual(requires, ["'child_process'", "'crypto'", "'fs'", "'path'", 'entry']);
+  assert.deepStrictEqual(requires, ["'child_process'", "'crypto'", "'fs'", "'os'", "'path'", 'entry']);
+  assert.ok(/permission: 'deny'/.test(launcher) && /process\.exitCode = 2/.test(launcher), 'Cursor pre-action hook blocks (exit 2) when no verified copy loads');
 });
 
 check('session check only reads files and prints fixed text', () => {
@@ -177,7 +262,7 @@ check('plugin sets no Claude Code settings and no permission or hook switches', 
   assert.strictEqual(manifest.userConfig, undefined);
   assert.ok(!fs.existsSync(path.join(plugin, 'settings.json')));
   assert.ok(!fs.existsSync(path.join(plugin, 'bin')), 'no executables on the Bash PATH');
-  const files = listRepo(plugin).filter((f) => !f.endsWith('package-lock.json'));
+  const files = [...listRepo(plugin), ...listRepo(path.join(repo, 'plugins', 'marrow-cursor'))].filter((f) => !f.endsWith('package-lock.json'));
   const all = files.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
   for (const word of ['disableAllHooks', 'allowManagedHooksOnly', 'bypassPermissions', 'dangerously', 'permissions.allow']) {
     assert.ok(!all.includes(word), `plugin mentions ${word}`);
@@ -224,14 +309,20 @@ check('matcher collision table: only the 17 exact plugin tool names are skipped'
   const re = new RegExp(PLUGIN_MATCHER);
   for (const [tool, gated] of TOOLS) assert.strictEqual(re.test(tool), gated, JSON.stringify(tool));
 });
-check('matcher is never looser than the installer\'s, except the 17 exact plugin tool names', () => {
+// The installer's matcher, plus the matcher of every built marrow-mcp release passed after cli.ts.
+const RELEASE_MATCHERS = [['installer 0.1.69 / mcp 3.9.101', MASTER_MATCHER],
+  ...process.argv.slice(4).map((file) => {
+    const contract = require(path.resolve(file));
+    return [`mcp ${contract.MCP_ADAPTER_VERSION} (${path.relative(process.cwd(), file)})`, contract.NATIVE_HOOK_MATCHER];
+  })];
+for (const [label, matcher] of RELEASE_MATCHERS) check(`matcher is never looser than ${label}, except the 17 exact plugin tool names`, () => {
   const plugin = new RegExp(PLUGIN_MATCHER);
-  const master = new RegExp(MASTER_MATCHER);
+  const master = new RegExp(matcher);
   // Fixed cases plus every combination of prefix, server, tool and suffix fragments.
-  const prefixes = ['', 'x', ' ', '\n', 'functions.', 'mcp__', 'Bash'];
-  const servers = ['mcp__marrow__', 'mcp__plugin_marrow_marrow__', 'mcp__Marrow__', 'mcp__plugin_marrow_marrow2__', 'mcp__evil__', 'MCP:marrow:', ''];
+  const prefixes = ['', 'x', ' ', '\n', '\r', '\0', '\u2028', 'functions.', 'mcp__', 'Bash'];
+  const servers = ['mcp__marrow__', 'mcp__plugin_marrow_marrow__', 'mcp__Marrow__', 'mcp__PLUGIN_MARROW_MARROW__', 'mcp__plugin_marrow_marrow2__', 'mcp__evil__', 'MCP:marrow:', 'MCP:', ''];
   const tools = ['marrow_commit', 'marrow_agent_runtime', 'marrow_auto', 'MARROW_COMMIT', 'evil', 'Bash', 'Read', 'marrow_x__mcp__a__b'];
-  const suffixes = ['', '\n', ' ', 'x', '$', '__mcp__a__b'];
+  const suffixes = ['', '\n', '\r', '\0', '\u2028', ' ', 'x', '$', '__mcp__a__b'];
   const corpus = TOOLS.map(([t]) => t);
   for (const a of prefixes) for (const b of servers) for (const c of tools) for (const d of suffixes) corpus.push(a + b + c + d);
   let skippedByPlugin = 0;
@@ -242,12 +333,32 @@ check('matcher is never looser than the installer\'s, except the 17 exact plugin
     }
   }
   assert.ok(skippedByPlugin >= OWN.length, 'the corpus covers every exempt name');
+  process.stdout.write(`  ${corpus.length} names, ${skippedByPlugin} skipped by the plugin and gated by ${label}, all exact plugin tool names\n`);
+});
+// Cursor names MCP tools `MCP:<tool>` in preToolUse and postToolUse, with no server. The plugin's
+// matchers are the installer's bytes, so they gate and skip exactly the same names; the table below
+// records which names that is (master behaviour, kept on purpose).
+check('Cursor matchers gate exactly the names the installer\'s matchers gate', () => {
+  const pairs = [[cursorHooks.hooks.preToolUse[0].matcher, CURSOR_PRE_MATCHER], [cursorHooks.hooks.postToolUse[0].matcher, CURSOR_MATCHER]];
+  const tools = ['Shell', 'Write', 'Delete', 'Task', 'Read', 'Glob', 'Grep', 'List', 'WebSearch', 'Edit', 'MCP:marrow_think', 'MCP:marrow_delete_all',
+    'MCP:Marrow_think', 'MCP:MARROW_THINK', 'MCP:marrow', 'MCP:marrowx', 'MCP:marrow:marrow_commit', 'MCP:marrow:evil', 'MCP:evil:marrow_commit',
+    'MCP:github_push', 'MCP:marrow_think\n', 'MCP:marrow_think\nx', ' MCP:github_push', 'mcp__marrow__marrow_think', 'functions.marrow_think'];
+  const parts = ['', 'MCP:', 'marrow', 'marrow_', 'Marrow_', 'marrow:', ':', 'think', '\n', ' ', 'x', 'Shell'];
+  for (const a of parts) for (const b of parts) for (const c of parts) tools.push(a + b + c);
+  for (const [ours, theirs] of pairs) {
+    const mine = new RegExp(ours);
+    const master = new RegExp(theirs);
+    for (const tool of tools) assert.strictEqual(mine.test(tool), master.test(tool), JSON.stringify(tool));
+  }
+  process.stdout.write(`  ${tools.length} names, identical decisions on both Cursor matchers\n`);
 });
 check('exempt tool names equal the pinned release\'s default tool set', () => {
   const cli = process.argv[3];
   if (!cli) return;
   const source = fs.readFileSync(cli, 'utf8');
-  const block = source.slice(source.indexOf('const PRIMARY_TOOL_NAMES = new Set(['));
+  const start = source.search(/const PRIMARY_TOOL_NAMES(?:: ReadonlySet<string>)? = new Set\(\[/);
+  assert.ok(start >= 0, 'PRIMARY_TOOL_NAMES not found');
+  const block = source.slice(start);
   const names = [...block.slice(0, block.indexOf(']);')).matchAll(/'(marrow_[a-z_]+)'/g)].map((m) => m[1]).sort();
   assert.deepStrictEqual(names, [...OWN_TOOLS].sort());
 });

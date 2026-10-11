@@ -1,0 +1,13 @@
+{
+  "name": "marrow",
+  "displayName": "Marrow",
+  "version": "0.1.0",
+  "description": "Approvals, policy and receipts for agent actions. Adds Marrow's Cursor hooks (pinned @getmarrow/mcp 3.9.101), the Marrow MCP server and a short skill. No key in any config. Hooks are cooperative, client-reported control.",
+  "author": {
+    "name": "Marrow"
+  },
+  "homepage": "https://getmarrow.ai/marrow-for-cursor",
+  "repository": "https://github.com/getmarrow/plugins",
+  "license": "MIT",
+  "keywords": ["governance", "approvals", "hooks", "mcp", "audit", "agent-control"]
+}

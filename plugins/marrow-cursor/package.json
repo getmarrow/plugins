@@ -1,0 +1,10 @@
+{
+  "name": "marrow-plugin-runtime",
+  "private": true,
+  "description": "Pins the Marrow MCP package that the marrow plugin's hooks and MCP server run. The launcher runs only a copy that matches scripts/mcp-manifest.json. Claude Code installs it from package-lock.json with install scripts disabled.",
+  "license": "MIT",
+  "dependencies": {
+    "@getmarrow/mcp": "3.9.101",
+    "@getmarrow/sdk": "3.7.65"
+  }
+}

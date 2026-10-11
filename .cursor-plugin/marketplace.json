@@ -1,0 +1,16 @@
+{
+  "name": "getmarrow",
+  "owner": {
+    "name": "Marrow"
+  },
+  "metadata": {
+    "description": "Marrow plugins for Cursor: approvals, policy and receipts for agent actions."
+  },
+  "plugins": [
+    {
+      "name": "marrow",
+      "source": "./plugins/marrow-cursor",
+      "description": "Marrow's Cursor hooks, MCP server and skill, pinned to @getmarrow/mcp 3.9.101. No key in any config."
+    }
+  ]
+}

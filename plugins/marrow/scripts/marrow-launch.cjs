@@ -1,25 +1,37 @@
+#!/usr/bin/env node
 'use strict';
 // Starts one pinned @getmarrow/mcp entrypoint for this plugin's hooks, or the MCP server when no
 // entrypoint is given. It adds no policy: every decision comes from the same entrypoints that
-// `npx @getmarrow/install` and `marrow-mcp setup` write into .claude/settings.json.
+// `npx @getmarrow/install` writes into .claude/settings.json (Claude Code) or .cursor/hooks.json
+// (Cursor). The same file ships in the Claude Code plugin and the Cursor plugin; the plugin's own
+// manifest folder (.claude-plugin or .cursor-plugin) picks the host.
 //
 // Only a copy whose files match mcp-manifest.json byte for byte ever runs:
 //   1. node_modules in this plugin, which Claude Code installs from package-lock.json (exact
 //      versions, sha512 integrity, install scripts off) when it caches the plugin;
-//   2. otherwise a private copy in ${CLAUDE_PLUGIN_DATA}, installed once with `npm ci` from the same
-//      lockfile (install scripts off, outside the project directory) and checked against the manifest.
+//   2. otherwise a private copy in ${CLAUDE_PLUGIN_DATA} (Claude Code) or ~/.marrow/cursor-plugin
+//      (Cursor, which has no plugin data folder), installed once with `npm ci` from the same lockfile
+//      (install scripts off, outside the project directory) and checked against the manifest.
 // Nothing resolves a version at run time and nothing runs from the project's node_modules.
 // When no verified copy can be loaded, the pre-action hook holds the tool call (fail closed) and
 // the other entrypoints exit with a non-blocking error.
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 
 const ROOT = path.resolve(__dirname, '..');
 const VERSION_RE = /^\d+\.\d+\.\d+$/;
 const POSIX = process.platform !== 'win32';
-const PRE_ACTION = 'claude-pre-action-hook';
-const ENTRYPOINTS = new Set([
+const CURSOR = fs.existsSync(path.join(ROOT, '.cursor-plugin', 'plugin.json'));
+const CLAUDE = fs.existsSync(path.join(ROOT, '.claude-plugin', 'plugin.json'));
+const PRE_ACTION = CURSOR ? 'cursor-pre-action-hook' : 'claude-pre-action-hook';
+const ENTRYPOINTS = new Set(CURSOR === CLAUDE ? [] : CURSOR ? [
+  'cursor-context-hook',
+  'cursor-pre-action-hook',
+  'cursor-hook',
+  'cursor-session-hook',
+] : [
   'claude-context-hook',
   'claude-pre-action-hook',
   'claude-hook',
@@ -33,8 +45,18 @@ const LOCK_STALE_MS = 300000;
 const args = process.argv.slice(2);
 
 function fail(reason) {
-  const fix = 'Reconnect to the network and retry, or ask the owner to reinstall the plugin: '
-    + 'claude plugin uninstall marrow@getmarrow, then claude plugin install marrow@getmarrow.';
+  const fix = CURSOR
+    ? 'Reconnect to the network and retry, or ask the owner to reinstall the Marrow plugin in Cursor.'
+    : 'Reconnect to the network and retry, or ask the owner to reinstall the plugin: '
+      + 'claude plugin uninstall marrow@getmarrow, then claude plugin install marrow@getmarrow.';
+  if (args[0] === PRE_ACTION && CURSOR) {
+    // Cursor: exit 2 blocks, and the hooks that gate are failClosed as the installer writes them.
+    const message = `Marrow plugin: ${reason} The action is held until Marrow can start. ${fix}`;
+    process.stdout.write(`${JSON.stringify({ permission: 'deny', user_message: message, agent_message: message })}\n`);
+    process.stderr.write(`${message}\n`);
+    process.exitCode = 2;
+    return;
+  }
   if (args[0] === PRE_ACTION) {
     process.stdout.write(`${JSON.stringify({
       hookSpecificOutput: {
@@ -181,9 +203,10 @@ function installCopy(data, id, manifest) {
 }
 
 // One-time install into ${CLAUDE_PLUGIN_DATA}; concurrent starts wait on a lock directory. Claude Code
-// deletes this directory when the plugin is uninstalled.
+// deletes this directory when the plugin is uninstalled. Cursor gives plugins no data folder, so the
+// Cursor plugin keeps its copy in ~/.marrow/cursor-plugin (removed by hand after an uninstall).
 function dataCopy(manifest) {
-  const data = process.env.CLAUDE_PLUGIN_DATA;
+  const data = CURSOR ? path.join(os.homedir(), '.marrow', 'cursor-plugin') : process.env.CLAUDE_PLUGIN_DATA;
   if (!data || !path.isAbsolute(data)) return null;
   const id = `mcp-${manifest.mcp.version}-${manifest.sha256.slice(0, 16)}`;
   const dir = path.join(data, id);

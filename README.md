@@ -1,8 +1,13 @@
-# Marrow plugins for Claude Code
+# Marrow plugins for Claude Code and Cursor
 
-The `getmarrow` marketplace. Its one plugin, `marrow`, adds Marrow's approval hooks, the Marrow MCP server and a short skill to Claude Code.
+The `getmarrow` marketplace for Claude Code and for Cursor. Each holds one plugin, `marrow`, which adds Marrow's approval hooks, the Marrow MCP server and a short skill to that host.
 
-## Install
+| Host | Plugin folder | Marketplace file |
+| --- | --- | --- |
+| Claude Code | `plugins/marrow` | `.claude-plugin/marketplace.json` |
+| Cursor | `plugins/marrow-cursor` | `.cursor-plugin/marketplace.json` |
+
+## Install in Claude Code
 
 In Claude Code:
 
@@ -21,35 +26,62 @@ No account or key is needed to install. Claude Code shows what the plugin adds b
 
 Check that `claude plugin marketplace list` shows `getmarrow` coming from `getmarrow/plugins`, and that `claude plugin list` shows exactly one `marrow@...` plugin.
 
-To stay on one reviewed release of the marketplace itself, add it by tag: `/plugin marketplace add getmarrow/plugins#v0.1.0`.
+To stay on one reviewed release of the marketplace itself, add it by tag: `/plugin marketplace add getmarrow/plugins#v0.2.0`.
 
+## Install in Cursor
 
-## What it adds
+Install **Marrow** from the Cursor plugin marketplace (Settings → Plugins), or add this repository as a plugin source. No account or key is needed to install, and no plugin config holds a key. The hooks and MCP server need Node.js 18 or later on `PATH`, and the first hook call installs the pinned package once (see "Pinned versions" below), so the first call needs the network. Restart Cursor after installing, then check that Cursor's hooks view lists Marrow's hooks.
 
-| Component | What it does |
-| --- | --- |
-| Hooks (`hooks/hooks.json`) | `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`, and the async `PermissionRequest` and `PostToolBatch` hooks. They run the pinned `@getmarrow/mcp` 3.9.100 Claude Code entrypoints, the same ones `npx @getmarrow/install` writes into `.claude/settings.json`. Their tool matcher sends Marrow every tool call the installer's matcher does, and skips only this plugin's own 17 Marrow tools by exact name. A warn-only `SessionStart` check says when Marrow is also set up outside the plugin or another plugin named `marrow` is enabled. |
-| MCP server (`.mcp.json`) | The Marrow MCP server. Its tools are on demand. |
-| Skill (`skills/marrow`) | When to call Marrow, how holds and approvals work, the key step, and the update commands. |
+Only the MCP server, without hooks, is a one-click link (a page renders it as a link or an "Add to Cursor" button):
 
-Hooks are cooperative, client-reported control. They act only while the plugin is enabled and Claude Code runs them. A configured hook never proves coverage or enforcement on its own.
+```text
+cursor://anysphere.cursor-deeplink/mcp/install?name=marrow&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIi0tcGFja2FnZT1AZ2V0bWFycm93L21jcEAzLjkuMTAxIiwibWFycm93LW1jcCJdfQ==
+```
+
+The `config` value is base64 of `{"command":"npx","args":["-y","--package=@getmarrow/mcp@3.9.101","marrow-mcp"]}`, pinned, with no key and no `env`. The MCP server alone is advisory: approvals are enforced only by the plugin's hooks. Unlike the plugin, the link starts the server through `npx`, which can pick up a copy of `@getmarrow/mcp` that a project's `node_modules` claims at the same version. Prefer the plugin.
+
+## What each plugin adds
+
+| Component | Claude Code (`plugins/marrow`) | Cursor (`plugins/marrow-cursor`) |
+| --- | --- | --- |
+| Hooks | `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`, and the async `PermissionRequest` and `PostToolBatch` hooks: the events `npx @getmarrow/install` writes into `.claude/settings.json`. Their tool matcher sends Marrow every tool call the installer's matcher does, and skips only this plugin's own 17 Marrow tools by exact name. A warn-only `SessionStart` check says when Marrow is also set up outside the plugin or another plugin named `marrow` is enabled. | The ten hooks `npx @getmarrow/install` 0.1.69 writes into `.cursor/hooks.json`: `preToolUse`, `beforeShellExecution` and `beforeMCPExecution` (15 s, `failClosed`), `postToolUse`, `postToolUseFailure`, `afterShellExecution`, `afterMCPExecution`, `stop`, `sessionStart` and `beforeSubmitPrompt`, with the installer's matchers byte for byte. |
+| MCP server | `.mcp.json`: server `marrow`. Its tools are on demand. | `mcp.json`: server `marrow`. Its tools are on demand. |
+| Skill | `skills/marrow`: when to call Marrow, holds and approvals, the key step, update commands. | `skills/marrow`: the same rules for Cursor. |
+
+Both run the pinned `@getmarrow/mcp` 3.9.101 entrypoints, the same ones the installer writes, through the same launcher. The plugins add no policy of their own.
+
+Hooks are cooperative, client-reported control. They act only while the plugin is enabled and the host runs them. A configured hook never proves coverage or enforcement on its own.
+
+**Cursor: how Marrow's own tools are told apart.** Cursor's `preToolUse` names an MCP tool `MCP:<tool>`, with no server. The plugin keeps the installer's matcher, so `MCP:marrow_<anything>` from any server skips `preToolUse`, as it does on the installer path today. MCP calls still reach Marrow in `beforeMCPExecution`, which carries the server name. There the plugin sends every MCP call, Marrow's own included, to the pinned hook. It has no fast-allow guard, so it never allows more than the installer's guard does.
 
 ## Key
 
-Without a key, routine and read-only tool calls run as usual, protected actions (deploy, publish, push, credential access and similar) are held with "Marrow can't find your key", and the MCP server does not start. To connect, create an agent key at https://getmarrow.ai and put it in `MARROW_API_KEY` or in `~/.marrow/env` (mode 600), then run `/reload-plugins`. Never paste a key into chat.
+Without a key, routine and read-only tool calls run as usual, protected actions (deploy, publish, push, credential access and similar) are held with "Marrow has no API key on this machine", and the MCP server does not start. To connect, create an agent key at https://getmarrow.ai, then keep it in a file in your own terminal:
+
+```bash
+mkdir -p ~/.marrow && chmod 700 ~/.marrow
+# put MARROW_API_KEY=<your_key> in ~/.marrow/env
+chmod 600 ~/.marrow/env
+```
+
+Or set `MARROW_API_KEY` in the environment that starts the host. Then run `/reload-plugins` in Claude Code, or restart Cursor. Never paste a key into chat.
+
+The plugins carry the hooks, so the hold message's "run the installer activate command" step is not needed for Claude Code or Cursor in a project that uses the plugin. That command (`MARROW_API_KEY=<your_key> npx -y @getmarrow/install@latest activate`) writes a second copy of the hooks there. To check the key and connection, run `npx -y @getmarrow/install@latest doctor`. It only reads. Until `@getmarrow/install` 0.1.70, it reports Claude Code and Cursor hooks as missing, because the plugin holds them.
 
 ## Pinned versions and updates
 
-- `plugins/marrow/package.json` and `package-lock.json` pin `@getmarrow/mcp` 3.9.100 and `@getmarrow/sdk` 3.7.65 with sha512 integrity. Claude Code installs them into the plugin's cached copy with install scripts disabled.
-- Hooks start that copy with `node`, not `npx`. Each start checks every file against `scripts/mcp-manifest.json`. If the copy is missing or changed, the plugin installs the same lockfile once into its data directory (`npm ci --ignore-scripts`, outside your project, under `~/.claude/plugins/data/`) and checks that copy the same way. Nothing is fetched by version at run time and nothing runs from your project's `node_modules`.
-- If no verified copy can be loaded (for example, offline on first use), the `PreToolUse` hook holds tool calls with a "Marrow plugin:" message until it can, and the other hooks report a non-blocking error.
-- `plugin.json` sets `version`, so Claude Code keeps you on the installed copy until a new version is published and you update. Third-party marketplaces do not auto-update unless you turn that on.
-- To update after Marrow reports a client update:
+- `package.json` and `package-lock.json` (the same files in both plugins) pin `@getmarrow/mcp` 3.9.101 and `@getmarrow/sdk` 3.7.65 with sha512 integrity, equal to `@getmarrow/install` 0.1.69's `src/pins.js`.
+- Hooks start the package with `node`, not `npx`. Each start checks every file against `scripts/mcp-manifest.json`. Claude Code installs the lockfile into the plugin's cached copy with install scripts disabled. If that copy is missing or changed, or on Cursor, which installs no plugin dependencies, the launcher installs the same lockfile once (`npm ci --ignore-scripts`, outside your project) and checks that copy the same way. Claude Code keeps it in the plugin's data folder (`~/.claude/plugins/data/`, removed on uninstall), Cursor in `~/.marrow/cursor-plugin` (mode 700). Nothing is fetched by version at run time and nothing runs from your project's `node_modules`.
+- If no verified copy can be loaded (for example, offline on first use), the pre-action hook holds tool calls with a "Marrow plugin:" message until it can, and the other hooks report a non-blocking error.
+- Each plugin sets `version`, so the host keeps you on the installed copy until a new version is published and you update. Third-party Claude Code marketplaces do not auto-update unless you turn that on.
+- To update the Claude Code plugin after Marrow reports a client update:
 
 ```bash
 claude plugin marketplace update getmarrow
 claude plugin update marrow@getmarrow
 ```
+
+In Cursor, update Marrow from Settings → Plugins.
 
 ## Uninstall
 
@@ -57,20 +89,26 @@ claude plugin update marrow@getmarrow
 claude plugin uninstall marrow@getmarrow
 ```
 
-The hooks and the MCP server live inside the plugin, so they go with it. Settings files are not touched by install or uninstall.
+In Cursor, uninstall Marrow from Settings → Plugins, then remove its package copy: `rm -rf ~/.marrow/cursor-plugin`.
+
+The hooks and the MCP server live inside the plugin, so they go with it. Install and uninstall never touch settings or hook files.
 
 ## Using Marrow with other agents
 
-Codex, Cursor, Gemini CLI and other hosts use `npx -y @getmarrow/install@0.1.68`, run by the owner in a terminal. The skills for those agents are at https://github.com/getmarrow/skills.
+Codex, Gemini CLI, Windsurf and other hosts get Marrow from the installer, run by the owner in a terminal: `MARROW_API_KEY=<your_key> npx -y @getmarrow/install@latest activate`, then `npx -y @getmarrow/install@latest doctor`. The skills for those agents are at https://github.com/getmarrow/skills.
 
 ## Maintainers: changing the pins
 
 1. Set the new exact versions in `plugins/marrow/package.json`, then `npm install --package-lock-only --ignore-scripts` there.
 2. In an empty directory with copies of `package.json` and `package-lock.json`: `npm ci --ignore-scripts`.
 3. `node tools/pin-manifest.cjs <that directory>`.
-4. Raise `version` in `plugins/marrow/.claude-plugin/plugin.json`. Claude Code keeps a cached copy while the version is unchanged, so a pin change without a version change never reaches users.
-5. If the new MCP release changes its default tool set, update `OWN_TOOLS` in `tools/check.cjs` and the matcher in `hooks/hooks.json`.
-6. `node tools/check.cjs <marrow-install>/src/pins.js <marrow-mcp>/src/cli.ts` and `claude plugin validate plugins/marrow --strict`.
-7. Tag the release (`v<version>`).
+4. Copy `package.json`, `package-lock.json`, `scripts/marrow-launch.cjs` and `scripts/mcp-manifest.json` to `plugins/marrow-cursor` (`tools/check.cjs` requires identical bytes).
+5. Raise `version` in `plugins/marrow/.claude-plugin/plugin.json` and `plugins/marrow-cursor/.cursor-plugin/plugin.json`. A host keeps a cached copy while the version is unchanged, so a pin change without a version change never reaches users.
+6. If the new MCP release changes its default tool set, update `OWN_TOOLS` in `tools/check.cjs` and the matcher in `plugins/marrow/hooks/hooks.json`. If the installer changes its Cursor hooks, update `plugins/marrow-cursor/hooks/hooks.json` and `CURSOR_EXPECTED`.
+7. Run the checks:
+   - `node tools/check.cjs <marrow-install>/src/pins.js <marrow-mcp>/src/tool-catalog.ts <marrow-mcp>/dist/hook-contract.js --installer-cursor-hooks <hooks.json the installer writes for Cursor>`
+   - `node tools/test-launcher.cjs claude` and `node tools/test-launcher.cjs cursor`
+   - `claude plugin validate plugins/marrow --strict`
+8. Tag the release (`v<version>`).
 
 Pins follow the `@getmarrow/install` release (`src/pins.js`): the same MCP version, SDK version and integrity.

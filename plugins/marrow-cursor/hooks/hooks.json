@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "command": "./scripts/marrow-launch.cjs cursor-pre-action-hook",
+        "matcher": "Write|Delete|Task|Read|Glob|Grep|Search|WebSearch|List|MCP:(?!marrow(?:_.*|:marrow_.*)$).*",
+        "timeout": 15,
+        "failClosed": true,
+        "async": false
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "./scripts/marrow-launch.cjs cursor-hook",
+        "matcher": "Shell|Write|Delete|Task|Read|Glob|Grep|Search|WebSearch|List|MCP:(?!marrow(?:_.*|:marrow_.*)$).*",
+        "timeout": 5
+      }
+    ],
+    "postToolUseFailure": [
+      {
+        "command": "./scripts/marrow-launch.cjs cursor-hook",
+        "matcher": "Shell|Write|Delete|Task|Read|Glob|Grep|Search|WebSearch|List|MCP:(?!marrow(?:_.*|:marrow_.*)$).*",
+        "timeout": 5
+      }
+    ],
+    "stop": [
+      {
+        "command": "./scripts/marrow-launch.cjs cursor-session-hook",
+        "timeout": 3
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "command": "./scripts/marrow-launch.cjs cursor-pre-action-hook",
+        "timeout": 15,
+        "failClosed": true,
+        "async": false
+      }
+    ],
+    "beforeMCPExecution": [
+      {
+        "command": "./scripts/marrow-launch.cjs cursor-pre-action-hook",
+        "timeout": 15,
+        "failClosed": true,
+        "async": false
+      }
+    ],
+    "afterShellExecution": [
+      {
+        "command": "./scripts/marrow-launch.cjs cursor-hook",
+        "timeout": 5
+      }
+    ],
+    "afterMCPExecution": [
+      {
+        "command": "./scripts/marrow-launch.cjs cursor-hook",
+        "timeout": 5
+      }
+    ],
+    "sessionStart": [
+      {
+        "command": "./scripts/marrow-launch.cjs cursor-session-hook",
+        "timeout": 5
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "./scripts/marrow-launch.cjs cursor-context-hook",
+        "timeout": 5
+      }
+    ]
+  }
+}

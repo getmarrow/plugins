@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "marrow": {
+      "command": "node",
+      "args": [
+        "${CURSOR_PLUGIN_ROOT}/scripts/marrow-launch.cjs"
+      ]
+    }
+  }
+}
