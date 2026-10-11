@@ -1,4 +1,4 @@
-# Marrow plugins for Claude Code and Cursor
+# Marrow plugins for Claude Code, Codex and Cursor
 
 The `getmarrow` marketplace for Claude Code and for Cursor. Each holds one plugin, `marrow`, which adds Marrow's approval hooks, the Marrow MCP server and a short skill to that host.
 
@@ -93,9 +93,44 @@ In Cursor, uninstall Marrow from Settings → Plugins, then remove its package c
 
 The hooks and the MCP server live inside the plugin, so they go with it. Install and uninstall never touch settings or hook files.
 
+## Codex
+
+The same repository is a Codex marketplace (`.agents/plugins/marketplace.json`) with two plugins:
+
+| Plugin | What it adds |
+| --- | --- |
+| `marrow` | Marrow's Codex hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SessionEnd`), the Marrow MCP server and the skill. The hooks run the pinned `@getmarrow/mcp` 3.9.101 Codex entrypoints, the ones `npx @getmarrow/install` writes into `.codex/hooks.json`. Their tool matcher sends Marrow every tool call except this plugin's own 17 Marrow tools, by exact name (`mcp__marrow__<tool>`). |
+| `marrow-advisory` | Advisory only: the Marrow MCP server and the skill, with no hooks. Nothing is held; Marrow sees an action only when the agent calls a `marrow_*` tool. |
+
+Install one of them, not both: both name their MCP server `marrow`.
+
+```bash
+codex plugin marketplace add getmarrow/plugins
+codex plugin add marrow@getmarrow
+```
+
+No account or key is needed to install. Start a new Codex session, then open `/hooks` and review and trust the Marrow hooks: Codex does not run plugin hooks until you trust them, and asks again whenever they change. On the first session start the plugin installs its pinned copy of `@getmarrow/mcp` (from `package-lock.json`, install scripts off) into `~/.codex/plugins/data/marrow-getmarrow/` and checks it against `scripts/mcp-manifest.json`; until a verified copy loads, `PreToolUse` holds tool calls with a "Marrow plugin:" message. Node.js 18 or later must be on `PATH`.
+
+Key: without one, routine tool calls run and protected actions are held with "Marrow has no API key". Codex passes a plugin MCP server only `MARROW_API_KEY` from your environment (by name; no key is stored in any config), so the simplest setup is the key file:
+
+    mkdir -p ~/.marrow && chmod 700 ~/.marrow
+    # put MARROW_API_KEY=<your_key> in ~/.marrow/env
+    chmod 600 ~/.marrow/env
+
+Update and remove:
+
+```bash
+codex plugin marketplace upgrade getmarrow
+codex plugin remove marrow@getmarrow
+```
+
+If `npx @getmarrow/install` also wrote `.codex/hooks.json` in a project, Marrow's hooks run twice there; keep one copy. Hooks are cooperative, client-reported control.
+
+Maintainers: `node tools/codex-check.cjs <marrow-install>/src/pins.js <marrow-mcp>/src/cli.ts <marrow-install>/src/installer.js --rust <wasm>` checks both packages and the matcher's name table. Build the Rust checker once with `cargo build --release --target wasm32-wasip1` in `tools/codex-rust-matcher` (it compiles the matcher with the `regex` crate, the engine Codex uses). Change pins with `node tools/codex-pin-manifest.cjs <dir>` (same steps as above, for `codex/marrow`, then copy `package.json` and the lockfile into `codex/marrow-advisory`), and regenerate the matcher with `node tools/codex-matcher.cjs` when the default tool set changes.
+
 ## Using Marrow with other agents
 
-Codex, Gemini CLI, Windsurf and other hosts get Marrow from the installer, run by the owner in a terminal: `MARROW_API_KEY=<your_key> npx -y @getmarrow/install@latest activate`, then `npx -y @getmarrow/install@latest doctor`. The skills for those agents are at https://github.com/getmarrow/skills.
+Gemini CLI, Windsurf and other hosts get Marrow from the installer, run by the owner in a terminal: `MARROW_API_KEY=<your_key> npx -y @getmarrow/install@latest activate`, then `npx -y @getmarrow/install@latest doctor`. The skills for those agents are at https://github.com/getmarrow/skills.
 
 ## Maintainers: changing the pins
 
