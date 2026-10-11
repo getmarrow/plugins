@@ -1,5 +1,5 @@
 {
-  "description": "Marrow hooks: the pinned @getmarrow/mcp Claude Code entrypoints that `npx @getmarrow/install` writes, in the same events and matchers. Cooperative, client-reported control: they run only while this plugin is enabled and Claude Code runs them.",
+  "description": "Marrow hooks: the pinned @getmarrow/mcp Claude Code entrypoints that `npx @getmarrow/install` writes, in the same events. The tool matcher sends Marrow every tool call the installer's matcher does and skips only this plugin's own 17 Marrow tools, by exact name. Cooperative, client-reported control: they run only while this plugin is enabled and Claude Code runs them.",
   "hooks": {
     "SessionStart": [
       {
@@ -32,7 +32,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|Edit|Write|MultiEdit|Read|Glob|Grep|Search|WebSearch|Task|functions\\.(?!mcp__marrow__marrow_).*|mcp__(?!marrow__marrow_|plugin_marrow_marrow__marrow_).*",
+        "matcher": "^(?!mcp__plugin_marrow_marrow__(?:marrow_agent_runtime|marrow_agent_status|marrow_arbitrate|marrow_buyer_proof|marrow_commit|marrow_completion_contracts|marrow_coordinate|marrow_decision_brief|marrow_decision_trace|marrow_evaluate_completion_contract|marrow_fleet_lessons|marrow_governance_timeline|marrow_model_usage|marrow_replay_compare|marrow_think|marrow_value_report|marrow_workflow_gate)$)[\\s\\S]*(?:Bash|Edit|Write|MultiEdit|Read|Glob|Grep|Search|WebSearch|Task|functions\\.|mcp__)",
         "hooks": [
           {
             "type": "command",
@@ -47,7 +47,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Bash|Edit|Write|MultiEdit|Read|Glob|Grep|Search|WebSearch|Task|functions\\.(?!mcp__marrow__marrow_).*|mcp__(?!marrow__marrow_|plugin_marrow_marrow__marrow_).*",
+        "matcher": "^(?!mcp__plugin_marrow_marrow__(?:marrow_agent_runtime|marrow_agent_status|marrow_arbitrate|marrow_buyer_proof|marrow_commit|marrow_completion_contracts|marrow_coordinate|marrow_decision_brief|marrow_decision_trace|marrow_evaluate_completion_contract|marrow_fleet_lessons|marrow_governance_timeline|marrow_model_usage|marrow_replay_compare|marrow_think|marrow_value_report|marrow_workflow_gate)$)[\\s\\S]*(?:Bash|Edit|Write|MultiEdit|Read|Glob|Grep|Search|WebSearch|Task|functions\\.|mcp__)",
         "hooks": [
           {
             "type": "command",
@@ -62,7 +62,7 @@
     ],
     "PostToolUseFailure": [
       {
-        "matcher": "Bash|Edit|Write|MultiEdit|Read|Glob|Grep|Search|WebSearch|Task|functions\\.(?!mcp__marrow__marrow_).*|mcp__(?!marrow__marrow_|plugin_marrow_marrow__marrow_).*",
+        "matcher": "^(?!mcp__plugin_marrow_marrow__(?:marrow_agent_runtime|marrow_agent_status|marrow_arbitrate|marrow_buyer_proof|marrow_commit|marrow_completion_contracts|marrow_coordinate|marrow_decision_brief|marrow_decision_trace|marrow_evaluate_completion_contract|marrow_fleet_lessons|marrow_governance_timeline|marrow_model_usage|marrow_replay_compare|marrow_think|marrow_value_report|marrow_workflow_gate)$)[\\s\\S]*(?:Bash|Edit|Write|MultiEdit|Read|Glob|Grep|Search|WebSearch|Task|functions\\.|mcp__)",
         "hooks": [
           {
             "type": "command",
@@ -91,7 +91,7 @@
     ],
     "PermissionRequest": [
       {
-        "matcher": "Bash|Edit|Write|MultiEdit|Read|Glob|Grep|Search|WebSearch|Task|functions\\.(?!mcp__marrow__marrow_).*|mcp__(?!marrow__marrow_|plugin_marrow_marrow__marrow_).*",
+        "matcher": "^(?!mcp__plugin_marrow_marrow__(?:marrow_agent_runtime|marrow_agent_status|marrow_arbitrate|marrow_buyer_proof|marrow_commit|marrow_completion_contracts|marrow_coordinate|marrow_decision_brief|marrow_decision_trace|marrow_evaluate_completion_contract|marrow_fleet_lessons|marrow_governance_timeline|marrow_model_usage|marrow_replay_compare|marrow_think|marrow_value_report|marrow_workflow_gate)$)[\\s\\S]*(?:Bash|Edit|Write|MultiEdit|Read|Glob|Grep|Search|WebSearch|Task|functions\\.|mcp__)",
         "hooks": [
           {
             "type": "command",

@@ -3,16 +3,22 @@
 // entrypoint is given. It adds no policy: every decision comes from the same entrypoints that
 // `npx @getmarrow/install` and `marrow-mcp setup` write into .claude/settings.json.
 //
-// Fast path: the copy Claude Code installed into this plugin's node_modules from package-lock.json
-// (exact versions, sha512 integrity, install scripts disabled). Every start checks those files
-// against mcp-manifest.json, as the installer's local runtime (launch.cjs) does. When the copy is
-// missing or any file differs, the same entrypoint runs through npx at the same pinned version.
+// Only a copy whose files match mcp-manifest.json byte for byte ever runs:
+//   1. node_modules in this plugin, which Claude Code installs from package-lock.json (exact
+//      versions, sha512 integrity, install scripts off) when it caches the plugin;
+//   2. otherwise a private copy in ${CLAUDE_PLUGIN_DATA}, installed once with `npm ci` from the same
+//      lockfile (install scripts off, outside the project directory) and checked against the manifest.
+// Nothing resolves a version at run time and nothing runs from the project's node_modules.
+// When no verified copy can be loaded, the pre-action hook holds the tool call (fail closed) and
+// the other entrypoints exit with a non-blocking error.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
 const ROOT = path.resolve(__dirname, '..');
 const VERSION_RE = /^\d+\.\d+\.\d+$/;
+const POSIX = process.platform !== 'win32';
+const PRE_ACTION = 'claude-pre-action-hook';
 const ENTRYPOINTS = new Set([
   'claude-context-hook',
   'claude-pre-action-hook',
@@ -20,42 +26,79 @@ const ENTRYPOINTS = new Set([
   'claude-session-hook',
   'claude-permission-request-hook',
 ]);
+const NPM_TIMEOUT_MS = 120000;
+const LOCK_WAIT_MS = 150000;
+const LOCK_STALE_MS = 300000;
 
 const args = process.argv.slice(2);
-if (args.length > 1 || (args.length === 1 && !ENTRYPOINTS.has(args[0]))) {
-  process.stderr.write('Marrow plugin: unknown entrypoint.\n');
-  process.exit(1);
+
+function fail(reason) {
+  const fix = 'Reconnect to the network and retry, or ask the owner to reinstall the plugin: '
+    + 'claude plugin uninstall marrow@getmarrow, then claude plugin install marrow@getmarrow.';
+  if (args[0] === PRE_ACTION) {
+    process.stdout.write(`${JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: `Marrow plugin: ${reason} The action is held until Marrow can start. ${fix}`,
+      },
+    })}\n`);
+    process.exitCode = 0;
+    return;
+  }
+  process.stderr.write(`Marrow plugin: ${reason} ${fix}\n`);
+  process.exitCode = 1;
 }
 
-function pinnedVersion() {
+function readJson(file) {
+  return JSON.parse(fs.readFileSync(file, 'utf8'));
+}
+
+function loadManifest() {
   try {
-    const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).dependencies['@getmarrow/mcp'];
-    return VERSION_RE.test(String(version)) ? version : null;
+    const pin = readJson(path.join(ROOT, 'package.json')).dependencies['@getmarrow/mcp'];
+    const manifest = readJson(path.join(__dirname, 'mcp-manifest.json'));
+    const ok = VERSION_RE.test(String(pin))
+      && manifest.schema === 'marrow-plugin-mcp-manifest.v1'
+      && manifest.mcp && manifest.mcp.version === pin
+      && /^[0-9a-f]{64}$/.test(String(manifest.sha256))
+      && Array.isArray(manifest.files)
+      && typeof manifest.bin === 'string'
+      && manifest.files.includes(manifest.bin);
+    return ok ? manifest : null;
   } catch {
     return null;
   }
 }
 
-// Package files as relative paths, sorted; npm's own lock copy and .bin links are not package files.
+function owned(stat) {
+  return !POSIX || typeof process.getuid !== 'function' || stat.uid === process.getuid();
+}
+
+// Package files as sorted relative paths. npm's own lock copy and .bin links are not package files.
+// Anything that is not a plain file or directory (links, FIFOs, sockets, devices) and anything
+// writable by every user rejects the whole copy.
 function listFiles(base, relative) {
   const out = [];
-  const entries = fs.readdirSync(path.join(base, relative), { withFileTypes: true })
-    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  for (const entry of entries) {
-    const rel = relative ? `${relative}/${entry.name}` : entry.name;
+  const entries = fs.readdirSync(path.join(base, relative))
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  for (const name of entries) {
+    const rel = relative ? `${relative}/${name}` : name;
     if (rel === '.bin' || rel === '.package-lock.json') continue;
-    if (entry.isSymbolicLink()) throw new Error('link');
-    if (entry.isDirectory()) out.push(...listFiles(base, rel));
-    else if (entry.isFile()) out.push(rel);
+    const stat = fs.lstatSync(path.join(base, rel));
+    if (POSIX && (stat.mode & 0o002) !== 0) throw new Error('writable');
+    if (stat.isDirectory()) out.push(...listFiles(base, rel));
+    else if (stat.isFile()) out.push(rel);
+    else throw new Error('type');
   }
   return out;
 }
 
-function verifiedEntry(version) {
+// Returns the entry file when `base` (a node_modules directory) matches the manifest exactly.
+function verifiedEntry(manifest, base) {
   try {
-    const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, 'mcp-manifest.json'), 'utf8'));
-    if (manifest.schema !== 'marrow-plugin-mcp-manifest.v1' || manifest.mcp.version !== version) return null;
-    const base = path.join(ROOT, 'node_modules');
+    const stat = fs.lstatSync(base);
+    if (!stat.isDirectory() || !owned(stat) || (POSIX && (stat.mode & 0o002) !== 0)) return null;
     const files = listFiles(base, '');
     if (JSON.stringify(files) !== JSON.stringify(manifest.files)) return null;
     const hash = crypto.createHash('sha256');
@@ -71,30 +114,129 @@ function verifiedEntry(version) {
   }
 }
 
-const version = pinnedVersion();
-if (!version) {
-  process.stderr.write('Marrow plugin: package.json does not pin @getmarrow/mcp to an exact version.\n');
-  process.exit(1);
+// A directory this plugin owns: real directory, this user's, closed to group and others.
+function privateDir(dir) {
+  try {
+    const stat = fs.lstatSync(dir);
+    return stat.isDirectory() && owned(stat) && (!POSIX || (stat.mode & 0o077) === 0);
+  } catch {
+    return false;
+  }
 }
 
-const entry = verifiedEntry(version);
-if (entry) {
+function npmCommand() {
+  const bin = path.dirname(process.execPath);
+  const candidates = POSIX
+    ? [path.join(bin, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'), '/usr/share/nodejs/npm/bin/npm-cli.js']
+    : [path.join(bin, 'node_modules', 'npm', 'bin', 'npm-cli.js')];
+  for (const cli of candidates) {
+    try {
+      if (fs.statSync(cli).isFile()) return { file: process.execPath, prefix: [cli] };
+    } catch {
+      // try the next location
+    }
+  }
+  // POSIX PATH lookup never searches the current directory unless PATH asks for it; no shell.
+  return POSIX ? { file: 'npm', prefix: [] } : null;
+}
+
+function removeQuietly(target) {
+  try {
+    fs.rmSync(target, { recursive: true, force: true });
+  } catch {
+    // a leftover directory is removed by the next successful install
+  }
+}
+
+function sleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function installCopy(data, id, manifest) {
+  const npm = npmCommand();
+  if (!npm) return false;
+  const stage = path.join(data, `${id}.stage-${process.pid}-${crypto.randomBytes(4).toString('hex')}`);
+  try {
+    fs.mkdirSync(stage, { mode: 0o700 });
+    for (const file of ['package.json', 'package-lock.json']) {
+      fs.copyFileSync(path.join(ROOT, file), path.join(stage, file));
+    }
+    const { spawnSync } = require('child_process');
+    const result = spawnSync(npm.file, [...npm.prefix, 'ci', '--ignore-scripts', '--no-bin-links', '--omit=dev',
+      '--no-audit', '--no-fund', '--loglevel=error'], {
+      cwd: stage,
+      env: { ...process.env, npm_config_ignore_scripts: 'true', npm_config_update_notifier: 'false' },
+      stdio: 'ignore',
+      timeout: NPM_TIMEOUT_MS,
+      windowsHide: true,
+    });
+    if (result.status !== 0 || !verifiedEntry(manifest, path.join(stage, 'node_modules'))) return false;
+    fs.renameSync(stage, path.join(data, id));
+    return true;
+  } catch {
+    return false;
+  } finally {
+    removeQuietly(stage);
+  }
+}
+
+// One-time install into ${CLAUDE_PLUGIN_DATA}; concurrent starts wait on a lock directory. Claude Code
+// deletes this directory when the plugin is uninstalled.
+function dataCopy(manifest) {
+  const data = process.env.CLAUDE_PLUGIN_DATA;
+  if (!data || !path.isAbsolute(data)) return null;
+  const id = `mcp-${manifest.mcp.version}-${manifest.sha256.slice(0, 16)}`;
+  const dir = path.join(data, id);
+  const check = () => (privateDir(dir) ? verifiedEntry(manifest, path.join(dir, 'node_modules')) : null);
+  let entry = check();
+  if (entry) return entry;
+  try {
+    fs.mkdirSync(data, { recursive: true, mode: 0o700 });
+    const stat = fs.lstatSync(data);
+    if (!stat.isDirectory() || !owned(stat) || (POSIX && (stat.mode & 0o002) !== 0)) return null;
+  } catch {
+    return null;
+  }
+  const lock = path.join(data, `${id}.lock`);
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  while (Date.now() < deadline) {
+    try {
+      fs.mkdirSync(lock, { mode: 0o700 });
+    } catch {
+      try {
+        if (Date.now() - fs.statSync(lock).mtimeMs > LOCK_STALE_MS) removeQuietly(lock);
+      } catch {
+        // lock released meanwhile
+      }
+      sleep(250);
+      entry = check();
+      if (entry) return entry;
+      continue;
+    }
+    try {
+      entry = check();
+      if (entry) return entry;
+      removeQuietly(dir);
+      return installCopy(data, id, manifest) ? check() : null;
+    } finally {
+      removeQuietly(lock);
+    }
+  }
+  return null;
+}
+
+function main() {
+  if (args.length > 1 || (args.length === 1 && !ENTRYPOINTS.has(args[0]))) {
+    process.stderr.write('Marrow plugin: unknown entrypoint.\n');
+    process.exitCode = 1;
+    return;
+  }
+  const manifest = loadManifest();
+  if (!manifest) return fail('its pinned @getmarrow/mcp manifest is missing or does not match package.json.');
+  const entry = verifiedEntry(manifest, path.join(ROOT, 'node_modules')) || dataCopy(manifest);
+  if (!entry) return fail('could not load a verified copy of the pinned @getmarrow/mcp.');
   process.argv = [process.argv[0], entry, ...args];
   require(entry);
-} else {
-  const { spawn } = require('child_process');
-  const windows = process.platform === 'win32';
-  // Fixed arguments only: an exact version and an allowlisted entrypoint, so the Windows shell sees no user input.
-  const child = spawn(windows ? 'npx.cmd' : 'npx', ['-y', `--package=@getmarrow/mcp@${version}`, 'marrow-mcp', ...args], {
-    stdio: 'inherit',
-    shell: windows,
-  });
-  child.on('error', () => {
-    process.stderr.write('Marrow plugin: could not start npx for the pinned @getmarrow/mcp.\n');
-    process.exit(1);
-  });
-  child.on('exit', (code, signal) => {
-    if (signal) process.kill(process.pid, signal);
-    else process.exit(code === null ? 1 : code);
-  });
 }
+
+main();

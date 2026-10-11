@@ -32,7 +32,9 @@ To connect, the owner does this in their own terminal, never in chat:
 2. Put it where Marrow reads it: `MARROW_API_KEY` in the environment that starts Claude Code, or a line `MARROW_API_KEY=...` in `~/.marrow/env`, then `chmod 600 ~/.marrow/env`.
 3. Run `/reload-plugins` or restart Claude Code.
 
-Never ask for the key in chat, never print it, and never put it on a command line. With this plugin installed, do not suggest `npx @getmarrow/install` for Claude Code in the same project: it writes a second copy of the hooks.
+Never ask for the key in chat, never print it, and never put it on a command line. With this plugin installed, do not suggest `npx @getmarrow/install` or `marrow-mcp setup` for Claude Code in the same project, even when a Marrow message names them: they write a second copy of the hooks. The key step above is all the plugin needs.
+
+If a call is held with "Marrow plugin: ... could not load a verified copy", Marrow itself could not start. Tell the owner the message; do not retry around it.
 
 ## Updates and removal
 
