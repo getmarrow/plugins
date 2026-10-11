@@ -96,7 +96,7 @@ let boot;
   result(heldByLauncher(launch(p, [H.pre], { env: OFFLINE() })), '3 offline: pre-action denied by launcher (fail closed)');
   const post = launch(p, [H.post], { env: OFFLINE() });
   result(post.status === 1 && post.stdout === '', `3b offline: ${H.post} exits 1, empty stdout`);
-  const server = launch(p, [], { env: OFFLINE(), input: '' });
+  const server = launch(p, ['mcp'], { env: OFFLINE(), input: '' });
   result(server.status === 1 && server.stdout === '', '3c offline: MCP server exits 1 with nothing on stdout');
 }
 // 4 planted project copy
@@ -164,6 +164,17 @@ if (process.platform !== 'win32') {
     result(r.status === 1 && r.stdout === '', `8 entrypoint ${JSON.stringify(args.join(' '))} rejected`);
   }
 }
+// 8b a hook started without its entrypoint (a host that drops exec-form args) never enters MCP-server mode
+{
+  const p = freshPlugin({ withModules: true });
+  const r = launch(p, [], { input: PUSH });
+  result(r.status === 2 && r.stdout === '' && /no entrypoint/.test(r.stderr) && dataCopies(p).length === 0, '8b no argument: refused with exit 2, no server, nothing installed');
+  const server = launch(p, ['mcp', 'extra'], { input: '' });
+  result(server.status === 1 && server.stdout === '', '8c "mcp" takes no extra argument');
+  // The MCP config of every plugin names the explicit mode; hook configs never rely on arguments.
+  const cfg = JSON.parse(fs.readFileSync(path.join(source, host === 'cursor' ? 'mcp.json' : '.mcp.json'), 'utf8'));
+  result(cfg.mcpServers.marrow.args[cfg.mcpServers.marrow.args.length - 1] === 'mcp', '8d MCP config passes the explicit mcp argument');
+}
 // 9 concurrent first starts share one install
 async function concurrent() {
   const p = freshPlugin({ withModules: false });
@@ -183,7 +194,7 @@ async function concurrent() {
 // 10 MCP server start with no key: stdout stays clean for the MCP protocol
 function serverStart() {
   const p = freshPlugin({ withModules: false });
-  const r = launch(p, [], { input: '' });
+  const r = launch(p, ['mcp'], { input: '' });
   result(!/added \d+ packages|npm (?:WARN|ERR)/.test(r.stdout) && dataCopies(p).length === 1, '10 MCP start bootstraps with clean stdout', `exit ${r.status}, stdout ${r.stdout.length} bytes`);
 }
 

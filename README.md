@@ -1,11 +1,14 @@
 # Marrow plugins for Claude Code, Codex and Cursor
 
-The `getmarrow` marketplace for Claude Code and for Cursor. Each holds one plugin, `marrow`, which adds Marrow's approval hooks, the Marrow MCP server and a short skill to that host.
+The `getmarrow` marketplace for Claude Code, Cursor and Codex. Each host's `marrow` plugin adds Marrow's approval hooks, the Marrow MCP server and a short skill to that host. Codex also has `marrow-advisory`, with no hooks.
 
 | Host | Plugin folder | Marketplace file |
 | --- | --- | --- |
 | Claude Code | `plugins/marrow` | `.claude-plugin/marketplace.json` |
 | Cursor | `plugins/marrow-cursor` | `.cursor-plugin/marketplace.json` |
+| Codex | `codex/marrow` (hooks), `codex/marrow-advisory` (no hooks; install one of the two, not both) | `.agents/plugins/marketplace.json` |
+
+Each plugin governs its own host only. The Claude Code plugin does not govern Cursor, even where Cursor imports Claude Code plugins: Cursor users install the Cursor plugin.
 
 ## Install in Claude Code
 
@@ -52,6 +55,8 @@ Both run the pinned `@getmarrow/mcp` 3.9.101 entrypoints, the same ones the inst
 
 Hooks are cooperative, client-reported control. They act only while the plugin is enabled and the host runs them. A configured hook never proves coverage or enforcement on its own.
 
+**Hook commands.** Every hook command is one string that names the plugin root variable and the entrypoint inline (`node "${CLAUDE_PLUGIN_ROOT}/scripts/marrow-launch.cjs" claude-pre-action-hook`, `node "${CURSOR_PLUGIN_ROOT}/scripts/marrow-launch.cjs" cursor-pre-action-hook`, `${PLUGIN_ROOT}` on Codex). None is relative to your project and none relies on separate `args`, which a host that imports the plugin may drop. The launcher starts the MCP server only for the explicit `mcp` argument in the plugin's MCP config; started with no argument it refuses (exit 2) and starts nothing. `tools/check.cjs` enforces both.
+
 **Cursor: how Marrow's own tools are told apart.** Cursor's `preToolUse` names an MCP tool `MCP:<tool>`, with no server. The plugin keeps the installer's matcher, so `MCP:marrow_<anything>` from any server skips `preToolUse`, as it does on the installer path today. MCP calls still reach Marrow in `beforeMCPExecution`, which carries the server name. There the plugin sends every MCP call, Marrow's own included, to the pinned hook. It has no fast-allow guard, so it never allows more than the installer's guard does.
 
 ## Key
@@ -71,7 +76,7 @@ The plugins carry the hooks, so the hold message's "run the installer activate c
 ## Pinned versions and updates
 
 - `package.json` and `package-lock.json` (the same files in both plugins) pin `@getmarrow/mcp` 3.9.101 and `@getmarrow/sdk` 3.7.65 with sha512 integrity, equal to `@getmarrow/install` 0.1.69's `src/pins.js`.
-- Hooks start the package with `node`, not `npx`. Each start checks every file against `scripts/mcp-manifest.json`. Claude Code installs the lockfile into the plugin's cached copy with install scripts disabled. If that copy is missing or changed, or on Cursor, which installs no plugin dependencies, the launcher installs the same lockfile once (`npm ci --ignore-scripts`, outside your project) and checks that copy the same way. Claude Code keeps it in the plugin's data folder (`~/.claude/plugins/data/`, removed on uninstall), Cursor in `~/.marrow/cursor-plugin` (mode 700). Nothing is fetched by version at run time and nothing runs from your project's `node_modules`.
+- Hooks start the package with `node`, not `npx`. Each start checks every file against `scripts/mcp-manifest.json`. Claude Code installs the lockfile into the plugin's cached copy with install scripts disabled. If that copy is missing or changed, or on Cursor, which installs no plugin dependencies, the launcher installs the same lockfile once (`npm ci --ignore-scripts`, outside your project) and checks that copy the same way. Claude Code keeps it in the plugin's data folder (`~/.claude/plugins/data/`, removed on uninstall), Cursor in `~/.marrow/cursor-plugin` (mode 700), Codex in `~/.codex/plugins/data/marrow-getmarrow/`. Nothing is fetched by version at run time and nothing runs from your project's `node_modules`.
 - If no verified copy can be loaded (for example, offline on first use), the pre-action hook holds tool calls with a "Marrow plugin:" message until it can, and the other hooks report a non-blocking error.
 - Each plugin sets `version`, so the host keeps you on the installed copy until a new version is published and you update. Third-party Claude Code marketplaces do not auto-update unless you turn that on.
 - To update the Claude Code plugin after Marrow reports a client update:
@@ -87,11 +92,15 @@ In Cursor, update Marrow from Settings → Plugins.
 
 ```bash
 claude plugin uninstall marrow@getmarrow
+claude plugin marketplace remove getmarrow
 ```
 
-In Cursor, uninstall Marrow from Settings → Plugins, then remove its package copy: `rm -rf ~/.marrow/cursor-plugin`.
+In Cursor, uninstall Marrow from Settings → Plugins, then remove its package copy: `rm -rf ~/.marrow/cursor-plugin`. In Codex, see "Update and remove" below.
 
-The hooks and the MCP server live inside the plugin, so they go with it. Install and uninstall never touch settings or hook files.
+The hooks and the MCP server live inside the plugin, so they go with it. What is left, exactly:
+
+- **Claude Code.** Installing writes `enabledPlugins` (and, from the marketplace add, `extraKnownMarketplaces`) in `~/.claude/settings.json`; it writes no hook entries and does not touch your other settings. Uninstall removes the `enabledPlugins` entry and the plugin's data folder (`~/.claude/plugins/data/`). The cached plugin copy stays, marked `.orphaned_at`, until Claude Code's own cleanup removes it. `claude plugin marketplace remove getmarrow` removes the marketplace registration.
+- **All hosts.** Marrow's runtime state under `~/.marrow` stays: for example `session-loop-guard/state.json`, and the cache, spool, health and host-approval files that build up in use. Your key file `~/.marrow/env` stays too. Delete the files you no longer want; nothing is deleted for you.
 
 ## Codex
 
@@ -102,7 +111,7 @@ The same repository is a Codex marketplace (`.agents/plugins/marketplace.json`) 
 | `marrow` | Marrow's Codex hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SessionEnd`), the Marrow MCP server and the skill. The hooks run the pinned `@getmarrow/mcp` 3.9.101 Codex entrypoints, the ones `npx @getmarrow/install` writes into `.codex/hooks.json`. Their tool matcher sends Marrow every tool call except this plugin's own 17 Marrow tools, by exact name (`mcp__marrow__<tool>`). |
 | `marrow-advisory` | Advisory only: the Marrow MCP server and the skill, with no hooks. Nothing is held; Marrow sees an action only when the agent calls a `marrow_*` tool. |
 
-Install one of them, not both: both name their MCP server `marrow`.
+Install one of them, not both: both name their MCP server `marrow`. Codex accepts both without a warning, and one server `marrow` then wins.
 
 ```bash
 codex plugin marketplace add getmarrow/plugins
@@ -121,12 +130,17 @@ Update and remove:
 
 ```bash
 codex plugin marketplace upgrade getmarrow
-codex plugin remove marrow@getmarrow
+codex plugin remove marrow@getmarrow      # or marrow-advisory@getmarrow
+rm -rf ~/.codex/plugins/data/marrow-getmarrow
 ```
 
-If `npx @getmarrow/install` also wrote `.codex/hooks.json` in a project, Marrow's hooks run twice there; keep one copy. Hooks are cooperative, client-reported control.
+`codex plugin remove` leaves the package copy in `~/.codex/plugins/data/marrow-getmarrow` (about 3 MB); the `rm` step deletes it. The runtime state under `~/.marrow` and your key file stay, as above.
 
-Maintainers: `node tools/codex-check.cjs <marrow-install>/src/pins.js <marrow-mcp>/src/cli.ts <marrow-install>/src/installer.js --rust <wasm>` checks both packages and the matcher's name table. Build the Rust checker once with `cargo build --release --target wasm32-wasip1` in `tools/codex-rust-matcher` (it compiles the matcher with the `regex` crate, the engine Codex uses). Change pins with `node tools/codex-pin-manifest.cjs <dir>` (same steps as above, for `codex/marrow`, then copy `package.json` and the lockfile into `codex/marrow-advisory`), and regenerate the matcher with `node tools/codex-matcher.cjs` when the default tool set changes.
+Codex does not accept the tool-hook matcher that `npx @getmarrow/install` writes into `.codex/hooks.json`, so for protection in Codex use this plugin, not the installer. If the installer's `.codex/hooks.json` is also there, its context and session hooks run twice next to the plugin's; keep one copy. Hooks are cooperative, client-reported control.
+
+The bundled skill (`skills/marrow/SKILL.md` and `references/hosts.md` in both packages) is the `getmarrow/skills` copy byte for byte. Copy it from the skills repo when that changes; `--skills <checkout>` below fails if either package differs.
+
+Maintainers: `node tools/codex-check.cjs <marrow-install>/src/pins.js <marrow-mcp>/src/cli.ts <marrow-install>/src/installer.js --skills <getmarrow/skills checkout> --rust <wasm>` checks both packages and the matcher's name table. Build the Rust checker once with `cargo build --release --target wasm32-wasip1` in `tools/codex-rust-matcher` (it compiles the matcher with the `regex` crate, the engine Codex uses). Change pins with `node tools/codex-pin-manifest.cjs <dir>` (same steps as above, for `codex/marrow`, then copy `package.json` and the lockfile into `codex/marrow-advisory`), and regenerate the matcher with `node tools/codex-matcher.cjs` when the default tool set changes.
 
 ## Using Marrow with other agents
 
@@ -141,7 +155,8 @@ Gemini CLI, Windsurf and other hosts get Marrow from the installer, run by the o
 5. Raise `version` in `plugins/marrow/.claude-plugin/plugin.json` and `plugins/marrow-cursor/.cursor-plugin/plugin.json`. A host keeps a cached copy while the version is unchanged, so a pin change without a version change never reaches users.
 6. If the new MCP release changes its default tool set, update `OWN_TOOLS` in `tools/check.cjs` and the matcher in `plugins/marrow/hooks/hooks.json`. If the installer changes its Cursor hooks, update `plugins/marrow-cursor/hooks/hooks.json` and `CURSOR_EXPECTED`.
 7. Run the checks:
-   - `node tools/check.cjs <marrow-install>/src/pins.js <marrow-mcp>/src/tool-catalog.ts <marrow-mcp>/dist/hook-contract.js --installer-cursor-hooks <hooks.json the installer writes for Cursor>`
+   - `node tools/check.cjs <marrow-install>/src/pins.js <marrow-mcp>/src/cli.ts <marrow-mcp>/dist/hook-contract.js [<candidate marrow-mcp>/dist/hook-contract.js ...] [--installer-cursor-hooks <hooks.json the installer writes for Cursor>]` (use `src/tool-catalog.ts` for 3.9.102 and later in place of `src/cli.ts`)
+   - `node tools/codex-check.cjs <marrow-install>/src/pins.js <marrow-mcp>/src/cli.ts <marrow-install>/src/installer.js --skills <getmarrow/skills checkout>`
    - `node tools/test-launcher.cjs claude` and `node tools/test-launcher.cjs cursor`
    - `claude plugin validate plugins/marrow --strict`
 8. Tag the release (`v<version>`).

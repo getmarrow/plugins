@@ -129,12 +129,14 @@ check('hooks are exactly the installer\'s Claude Code events, entrypoints and fi
     assert.strictEqual(entries[0].matcher, want.matcher, `${event} matcher`);
     assert.strictEqual(entries[0].hooks.length, 1, event);
     const handler = entries[0].hooks[0];
-    const expected = { type: 'command', command: 'node', args: [LAUNCH, want.entry] };
+    // One command string with the entrypoint inline (the installer's shape), so a host that drops
+    // exec-form args can never start the launcher without an entrypoint.
+    const expected = { type: 'command', command: `node "${LAUNCH}" ${want.entry}` };
     if (want.async) expected.async = true;
     assert.deepStrictEqual(handler, expected, event);
   }
   const start = hooks.hooks.SessionStart;
-  assert.deepStrictEqual(start, [{ matcher: 'startup|resume', hooks: [{ type: 'command', command: 'node', args: [CHECK], timeout: 5 }] }]);
+  assert.deepStrictEqual(start, [{ matcher: 'startup|resume', hooks: [{ type: 'command', command: `node "${CHECK}"`, timeout: 5 }] }]);
 });
 
 // Cursor: the hooks @getmarrow/install 0.1.69 writes with host approvals (MCP 3.9.99 and later), with
@@ -142,7 +144,8 @@ check('hooks are exactly the installer\'s Claude Code events, entrypoints and fi
 // every MCP call goes to the pinned hook, which decides Marrow's own tools itself.
 const CURSOR_PRE_MATCHER = 'Write|Delete|Task|Read|Glob|Grep|Search|WebSearch|List|MCP:(?!marrow(?:_.*|:marrow_.*)$).*';
 const CURSOR_MATCHER = 'Shell|Write|Delete|Task|Read|Glob|Grep|Search|WebSearch|List|MCP:(?!marrow(?:_.*|:marrow_.*)$).*';
-const CURSOR_LAUNCH = './scripts/marrow-launch.cjs';
+// The plugin root, never a path relative to the project the agent works in (audit H1).
+const CURSOR_LAUNCH = 'node "${CURSOR_PLUGIN_ROOT}/scripts/marrow-launch.cjs"';
 const GATE = { timeout: 15, failClosed: true, async: false };
 const CURSOR_EXPECTED = {
   preToolUse: { entry: 'cursor-pre-action-hook', matcher: CURSOR_PRE_MATCHER, ...GATE },
@@ -186,7 +189,7 @@ check('Cursor hooks are exactly the installer\'s events, matchers, timeouts and 
   }
 });
 check('Cursor MCP server runs the same launcher, with no key or env in the config', () => {
-  assert.deepStrictEqual(cursorMcp, { mcpServers: { marrow: { command: 'node', args: ['${CURSOR_PLUGIN_ROOT}/scripts/marrow-launch.cjs'] } } });
+  assert.deepStrictEqual(cursorMcp, { mcpServers: { marrow: { command: 'node', args: ['${CURSOR_PLUGIN_ROOT}/scripts/marrow-launch.cjs', 'mcp'] } } });
 });
 check('Cursor plugin ships the same pinned runtime files byte for byte', () => {
   for (const file of ['package.json', 'package-lock.json', 'LICENSE', 'scripts/marrow-launch.cjs', 'scripts/mcp-manifest.json']) {
@@ -206,8 +209,49 @@ check('Cursor launcher allowlist equals the entrypoints in the Cursor hooks', ()
   assert.deepStrictEqual(allow, [...new Set(Object.values(CURSOR_EXPECTED).map((v) => v.entry))].sort());
 });
 
-check('MCP server runs the same launcher with no entrypoint', () => {
-  assert.deepStrictEqual(mcp, { mcpServers: { marrow: { command: 'node', args: [LAUNCH] } } });
+check('MCP server runs the same launcher with the explicit mcp argument', () => {
+  assert.deepStrictEqual(mcp, { mcpServers: { marrow: { command: 'node', args: [LAUNCH, 'mcp'] } } });
+});
+
+// H1 / M3 static proof: every hook command of every plugin is `node "<plugin root variable>/scripts/..."`
+// plus one entrypoint word, with no exec-form args and no path that resolves against the project. A
+// project holding its own scripts/marrow-launch.cjs, resolved as each host would (variable -> plugin
+// folder, cwd -> project), is never what a hook command runs.
+check('no hook command can reference a project\'s own scripts/marrow-launch.cjs', () => {
+  const os = require('os');
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'marrow-planted-'));
+  fs.mkdirSync(path.join(project, 'scripts'));
+  const planted = path.join(project, 'scripts', 'marrow-launch.cjs');
+  fs.writeFileSync(planted, "require('fs').writeFileSync('PLANTED_MARKER', 'ran');\n");
+  const plugins = [
+    ['claude', hooks, 'CLAUDE_PLUGIN_ROOT', path.join(repo, 'plugins', 'marrow'), 8],
+    ['cursor', cursorHooks, 'CURSOR_PLUGIN_ROOT', path.join(repo, 'plugins', 'marrow-cursor'), 10],
+    ['codex', json('codex/marrow/hooks/hooks.json'), 'PLUGIN_ROOT', path.join(repo, 'codex', 'marrow'), 5],
+  ];
+  let seen = 0;
+  try {
+    for (const [host, file, variable, root, count] of plugins) {
+      const commands = [];
+      JSON.stringify(file.hooks, (key, value) => {
+        if (key === 'args') throw new Error(`${host}: exec-form args are lost by hosts that import the plugin`);
+        if (key === 'command' && typeof value === 'string') commands.push(value);
+        return value;
+      });
+      assert.strictEqual(commands.length, count, `${host}: every hook command is checked`);
+      for (const command of commands) {
+        const m = new RegExp('^node "\\$\\{' + variable + '\\}/scripts/(marrow-launch|marrow-session-check)\\.cjs"(?: [a-z-]+)?$').exec(command);
+        assert.ok(m, `${host}: ${command} is not node "\${${variable}}/scripts/<script>" <entrypoint>`);
+        const script = path.resolve(project, command.match(/"([^"]+)"/)[1].replace('${' + variable + '}', root));
+        assert.ok(script.startsWith(root + path.sep), `${host}: ${command} resolves outside the plugin`);
+        assert.notStrictEqual(script, planted, `${host}: ${command} runs the project's script`);
+        assert.ok(fs.existsSync(script), `${host}: ${script} does not exist`);
+        seen += 1;
+      }
+    }
+  } finally {
+    fs.rmSync(project, { recursive: true, force: true });
+  }
+  assert.strictEqual(seen, 23, 'all hook commands checked');
 });
 
 check('launcher allowlist equals the entrypoints in hooks.json', () => {
@@ -313,7 +357,7 @@ check('matcher collision table: only the 17 exact plugin tool names are skipped'
 const RELEASE_MATCHERS = [['installer 0.1.69 / mcp 3.9.101', MASTER_MATCHER],
   ...process.argv.slice(4).map((file) => {
     const contract = require(path.resolve(file));
-    return [`mcp ${contract.MCP_ADAPTER_VERSION} (${path.relative(process.cwd(), file)})`, contract.NATIVE_HOOK_MATCHER];
+    return [`${path.relative(process.cwd(), file)} (reports adapter version ${contract.MCP_ADAPTER_VERSION})`, contract.NATIVE_HOOK_MATCHER];
   })];
 for (const [label, matcher] of RELEASE_MATCHERS) check(`matcher is never looser than ${label}, except the 17 exact plugin tool names`, () => {
   const plugin = new RegExp(PLUGIN_MATCHER);
@@ -325,15 +369,15 @@ for (const [label, matcher] of RELEASE_MATCHERS) check(`matcher is never looser 
   const suffixes = ['', '\n', '\r', '\0', '\u2028', ' ', 'x', '$', '__mcp__a__b'];
   const corpus = TOOLS.map(([t]) => t);
   for (const a of prefixes) for (const b of servers) for (const c of tools) for (const d of suffixes) corpus.push(a + b + c + d);
-  let skippedByPlugin = 0;
+  const skipped = new Set();
   for (const tool of corpus) {
     if (master.test(tool) && !plugin.test(tool)) {
       assert.ok(OWN.includes(tool), `${JSON.stringify(tool)} is skipped by the plugin but gated by the installer`);
-      skippedByPlugin += 1;
+      skipped.add(tool);
     }
   }
-  assert.ok(skippedByPlugin >= OWN.length, 'the corpus covers every exempt name');
-  process.stdout.write(`  ${corpus.length} names, ${skippedByPlugin} skipped by the plugin and gated by ${label}, all exact plugin tool names\n`);
+  assert.strictEqual(skipped.size, OWN.length, 'the corpus covers every exempt name, and only those');
+  process.stdout.write(`  ${new Set(corpus).size} distinct names, ${skipped.size} distinct names skipped by the plugin and gated by ${label}, all exact plugin tool names\n`);
 });
 // Cursor names MCP tools `MCP:<tool>` in preToolUse and postToolUse, with no server. The plugin's
 // matchers are the installer's bytes, so they gate and skip exactly the same names; the table below

@@ -3,7 +3,8 @@
     "marrow": {
       "command": "node",
       "args": [
-        "${CURSOR_PLUGIN_ROOT}/scripts/marrow-launch.cjs"
+        "${CURSOR_PLUGIN_ROOT}/scripts/marrow-launch.cjs",
+        "mcp"
       ]
     }
   }

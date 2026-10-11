@@ -7,10 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/scripts/marrow-session-check.cjs"
-            ],
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/marrow-session-check.cjs\"",
             "timeout": 5
           }
         ]
@@ -21,11 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/scripts/marrow-launch.cjs",
-              "claude-context-hook"
-            ]
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/marrow-launch.cjs\" claude-context-hook"
           }
         ]
       }
@@ -36,11 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/scripts/marrow-launch.cjs",
-              "claude-pre-action-hook"
-            ]
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/marrow-launch.cjs\" claude-pre-action-hook"
           }
         ]
       }
@@ -51,11 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/scripts/marrow-launch.cjs",
-              "claude-hook"
-            ]
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/marrow-launch.cjs\" claude-hook"
           }
         ]
       }
@@ -66,11 +51,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/scripts/marrow-launch.cjs",
-              "claude-hook"
-            ]
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/marrow-launch.cjs\" claude-hook"
           }
         ]
       }
@@ -80,11 +61,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/scripts/marrow-launch.cjs",
-              "claude-session-hook"
-            ]
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/marrow-launch.cjs\" claude-session-hook"
           }
         ]
       }
@@ -95,11 +72,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/scripts/marrow-launch.cjs",
-              "claude-permission-request-hook"
-            ],
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/marrow-launch.cjs\" claude-permission-request-hook",
             "async": true
           }
         ]
@@ -110,11 +83,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/scripts/marrow-launch.cjs",
-              "claude-hook"
-            ],
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/marrow-launch.cjs\" claude-hook",
             "async": true
           }
         ]

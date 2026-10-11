@@ -3,7 +3,8 @@
     "marrow": {
       "command": "node",
       "args": [
-        "./scripts/marrow-launch.cjs"
+        "./scripts/marrow-launch.cjs",
+        "mcp"
       ],
       "cwd": "./",
       "env_vars": [

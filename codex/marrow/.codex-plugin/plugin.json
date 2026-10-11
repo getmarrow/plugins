@@ -23,7 +23,7 @@
   "interface": {
     "displayName": "Marrow",
     "shortDescription": "Approval hooks, MCP server and skill for consequential agent actions",
-    "longDescription": "Marrow checks consequential agent actions (deploy, publish, push, credential access and similar) against the owner's policy, routes approvals to the owner and keeps receipts. This plugin adds the same Codex hooks that npx @getmarrow/install writes, the Marrow MCP server and a skill. Hooks run only after you review and trust them in Codex. No account or key is needed to install.",
+    "longDescription": "Marrow checks consequential agent actions (deploy, publish, push, credential access and similar) against the owner's policy, routes approvals to the owner and keeps receipts. This plugin adds the same Codex hooks that npx @getmarrow/install writes, the Marrow MCP server and a skill. Hooks run only after you review and trust them in Codex. No account or key is needed to install. Install one of the two Marrow Codex plugins (marrow or marrow-advisory), not both: both name their MCP server marrow.",
     "developerName": "Marrow",
     "category": "Security",
     "capabilities": [

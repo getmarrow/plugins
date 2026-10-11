@@ -19,6 +19,7 @@ const flag = (name) => {
   argv.splice(i, 2);
   return value;
 };
+const skillsRepo = flag('--skills');
 const tableOut = flag('--table');
 const wasm = flag('--rust');
 const [pinsPath, cliPath, installerPath] = argv;
@@ -81,7 +82,7 @@ for (const dir of [A, B]) {
   });
   check(`${dir}: MCP server runs the launcher from the plugin root and carries no key`, () => {
     assert.deepStrictEqual(json(`${dir}/.mcp.json`), { mcpServers: { marrow: {
-      command: 'node', args: ['./scripts/marrow-launch.cjs'], cwd: './', env_vars: ['MARROW_API_KEY'] } } });
+      command: 'node', args: ['./scripts/marrow-launch.cjs', 'mcp'], cwd: './', env_vars: ['MARROW_API_KEY'] } } });
   });
   if (pinsPath) {
     check(`${dir}: pins equal the @getmarrow/install release pins (src/pins.js)`, () => {
@@ -102,6 +103,28 @@ check('both packages share the same launcher, lockfile dependencies and manifest
   assert.deepStrictEqual(json(`${A}/package.json`).dependencies, json(`${B}/package.json`).dependencies);
   const strip = (lock) => Object.fromEntries(Object.entries(lock.packages).filter(([k]) => k));
   assert.deepStrictEqual(strip(json(`${A}/package-lock.json`)), strip(json(`${B}/package-lock.json`)));
+});
+
+// The bundled skill is the skills repo's skill, byte for byte, and its pins are the package's pins.
+for (const file of ['SKILL.md', 'references/hosts.md']) {
+  check(`bundled skill ${file} equals the skills repo copy (both packages)`, () => {
+    if (!skillsRepo) throw new Error('pass --skills <path to the getmarrow/skills checkout>');
+    const want = fs.readFileSync(path.join(path.resolve(skillsRepo), 'skills', 'marrow', file), 'utf8');
+    for (const dir of [A, B]) assert.strictEqual(read(`${dir}/skills/marrow/${file}`), want, `${dir}/skills/marrow/${file}`);
+  });
+}
+check('bundled skill pins equal the package pins; Codex goes to the plugin, install one not both', () => {
+  const skill = read(`${A}/skills/marrow/SKILL.md`);
+  const mcp = json(`${A}/package.json`).dependencies['@getmarrow/mcp'];
+  assert.ok(skill.includes(`mcp-package: "@getmarrow/mcp@${mcp}"`), 'skill mcp-package differs from the package pin');
+  if (pinsPath) {
+    const installVersion = JSON.parse(fs.readFileSync(path.resolve(pinsPath, '..', '..', 'package.json'), 'utf8')).version;
+    assert.ok(skill.includes(`install-package: "@getmarrow/install@${installVersion}"`), 'skill install-package differs from the installer release');
+    for (const m of skill.matchAll(/@getmarrow\/install@(\d+\.\d+\.\d+)/g)) assert.strictEqual(m[1], installVersion);
+  }
+  for (const m of skill.matchAll(/@getmarrow\/mcp@(\d+\.\d+\.\d+)/g)) assert.strictEqual(m[1], mcp);
+  assert.ok(skill.includes('codex plugin add marrow@getmarrow') && /never both/.test(skill));
+  assert.ok(!/\*\*Codex, /.test(skill), 'Codex is listed with the installer hosts');
 });
 
 check('advisory package is directory-eligible: no hooks, userConfig, commands or agents', () => {
@@ -148,7 +171,9 @@ check('launcher allowlist equals the entrypoints in hooks.json; only prepare and
   const launcher = read(`${A}/scripts/marrow-launch.cjs`);
   const allow = [...launcher.matchAll(/^ {2}'(codex-[a-z-]+)',$/gm)].map((m) => m[1]).concat('prepare').sort();
   assert.deepStrictEqual(allow, Object.values(EXPECTED).map((v) => v.entry).sort());
-  assert.ok(launcher.includes("const install = args.length === 0 || args[0] === PREPARE;"));
+  assert.ok(launcher.includes("const MCP_MODE = 'mcp';") && launcher.includes('  MCP_MODE,\n  PREPARE,\n'));
+  assert.ok(launcher.includes("const install = args[0] === MCP_MODE || args[0] === PREPARE;"));
+  assert.ok(/if \(args\.length === 0\) \{[\s\S]*?process\.exitCode = 2;/.test(launcher), 'no argument must refuse, never start the server');
   assert.ok(launcher.includes('if (entry || !install) return entry;'));
   assert.ok(/permissionDecision: 'deny'/.test(launcher) && launcher.includes("const PRE_ACTION = 'codex-pre-action-hook';"));
   assert.ok(/'ci', '--ignore-scripts'/.test(launcher) && !/shell:/.test(launcher));

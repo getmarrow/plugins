@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
-// Starts one pinned @getmarrow/mcp entrypoint for this plugin's hooks, or the MCP server when no
-// entrypoint is given. It adds no policy: every decision comes from the same entrypoints that
+// Starts one pinned @getmarrow/mcp entrypoint for this plugin's hooks, or the MCP server when the
+// explicit `mcp` argument is given (no argument at all refuses). It adds no policy: every decision comes from the same entrypoints that
 // `npx @getmarrow/install` writes into .claude/settings.json (Claude Code) or .cursor/hooks.json
 // (Cursor). The same file ships in the Claude Code plugin and the Cursor plugin; the plugin's own
 // manifest folder (.claude-plugin or .cursor-plugin) picks the host.
@@ -26,12 +26,15 @@ const POSIX = process.platform !== 'win32';
 const CURSOR = fs.existsSync(path.join(ROOT, '.cursor-plugin', 'plugin.json'));
 const CLAUDE = fs.existsSync(path.join(ROOT, '.claude-plugin', 'plugin.json'));
 const PRE_ACTION = CURSOR ? 'cursor-pre-action-hook' : 'claude-pre-action-hook';
+const MCP_MODE = 'mcp';
 const ENTRYPOINTS = new Set(CURSOR === CLAUDE ? [] : CURSOR ? [
+  MCP_MODE,
   'cursor-context-hook',
   'cursor-pre-action-hook',
   'cursor-hook',
   'cursor-session-hook',
 ] : [
+  MCP_MODE,
   'claude-context-hook',
   'claude-pre-action-hook',
   'claude-hook',
@@ -249,7 +252,15 @@ function dataCopy(manifest) {
 }
 
 function main() {
-  if (args.length > 1 || (args.length === 1 && !ENTRYPOINTS.has(args[0]))) {
+  if (args.length === 0) {
+    // A hook whose host dropped its arguments must never fall into MCP-server mode: the server
+    // waits on stdin and times out, which fails open. The server is started only by the explicit
+    // `mcp` argument in the plugin's MCP config. Exit 2 blocks on every host that runs this launcher.
+    process.stderr.write('Marrow plugin: no entrypoint given (the MCP server needs the explicit "mcp" argument). Nothing was started.\n');
+    process.exitCode = 2;
+    return;
+  }
+  if (args.length > 1 || !ENTRYPOINTS.has(args[0])) {
     process.stderr.write('Marrow plugin: unknown entrypoint.\n');
     process.exitCode = 1;
     return;
@@ -258,7 +269,7 @@ function main() {
   if (!manifest) return fail('its pinned @getmarrow/mcp manifest is missing or does not match package.json.');
   const entry = verifiedEntry(manifest, path.join(ROOT, 'node_modules')) || dataCopy(manifest);
   if (!entry) return fail('could not load a verified copy of the pinned @getmarrow/mcp.');
-  process.argv = [process.argv[0], entry, ...args];
+  process.argv = [process.argv[0], entry, ...(args[0] === MCP_MODE ? [] : args)];
   require(entry);
 }
 

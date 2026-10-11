@@ -1,6 +1,6 @@
 'use strict';
 // Codex launcher. Starts one pinned @getmarrow/mcp entrypoint for this plugin's hooks, or the MCP
-// server when no entrypoint is given. It adds no policy: every decision comes from the same Codex
+// server when the explicit `mcp` argument is given (no argument at all refuses). It adds no policy: every decision comes from the same Codex
 // entrypoints that `npx @getmarrow/install` writes into .codex/hooks.json.
 //
 // Only a copy whose files match mcp-manifest.json byte for byte ever runs:
@@ -22,7 +22,9 @@ const VERSION_RE = /^\d+\.\d+\.\d+$/;
 const POSIX = process.platform !== 'win32';
 const PRE_ACTION = 'codex-pre-action-hook';
 const PREPARE = 'prepare';
+const MCP_MODE = 'mcp';
 const ENTRYPOINTS = new Set([
+  MCP_MODE,
   PREPARE,
   'codex-context-hook',
   'codex-pre-action-hook',
@@ -243,18 +245,26 @@ function dataCopy(manifest, install) {
 }
 
 function main() {
-  if (args.length > 1 || (args.length === 1 && !ENTRYPOINTS.has(args[0]))) {
+  if (args.length === 0) {
+    // A hook whose host dropped its arguments must never fall into MCP-server mode: the server
+    // waits on stdin and times out, which fails open. The server is started only by the explicit
+    // `mcp` argument in the plugin's MCP config. Exit 2 blocks on every host that runs this launcher.
+    process.stderr.write('Marrow plugin: no entrypoint given (the MCP server needs the explicit "mcp" argument). Nothing was started.\n');
+    process.exitCode = 2;
+    return;
+  }
+  if (args.length > 1 || !ENTRYPOINTS.has(args[0])) {
     process.stderr.write('Marrow plugin: unknown entrypoint.\n');
     process.exitCode = 1;
     return;
   }
   const manifest = loadManifest();
   if (!manifest) return fail('its pinned @getmarrow/mcp manifest is missing or does not match package.json.');
-  const install = args.length === 0 || args[0] === PREPARE;
+  const install = args[0] === MCP_MODE || args[0] === PREPARE;
   const entry = verifiedEntry(manifest, path.join(ROOT, 'node_modules')) || dataCopy(manifest, install);
   if (!entry) return fail('could not load a verified copy of the pinned @getmarrow/mcp.');
   if (args[0] === PREPARE) return;
-  process.argv = [process.argv[0], entry, ...args];
+  process.argv = [process.argv[0], entry, ...(args[0] === MCP_MODE ? [] : args)];
   require(entry);
 }
 
