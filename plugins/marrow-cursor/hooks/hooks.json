@@ -4,7 +4,7 @@
     "preToolUse": [
       {
         "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/marrow-launch.cjs\" cursor-pre-action-hook",
-        "matcher": "Write|Delete|Task|Read|Glob|Grep|Search|WebSearch|List|MCP:(?!marrow(?:_.*|:marrow_.*)$).*",
+        "matcher": "Write|Delete|Task|Read|Glob|Grep|Search|WebSearch|List|[\\s\\S]*MCP:[\\s\\S]*",
         "timeout": 15,
         "failClosed": true,
         "async": false
@@ -13,14 +13,14 @@
     "postToolUse": [
       {
         "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/marrow-launch.cjs\" cursor-hook",
-        "matcher": "Shell|Write|Delete|Task|Read|Glob|Grep|Search|WebSearch|List|MCP:(?!marrow(?:_.*|:marrow_.*)$).*",
+        "matcher": "Shell|Write|Delete|Task|Read|Glob|Grep|Search|WebSearch|List|[\\s\\S]*MCP:[\\s\\S]*",
         "timeout": 5
       }
     ],
     "postToolUseFailure": [
       {
         "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/marrow-launch.cjs\" cursor-hook",
-        "matcher": "Shell|Write|Delete|Task|Read|Glob|Grep|Search|WebSearch|List|MCP:(?!marrow(?:_.*|:marrow_.*)$).*",
+        "matcher": "Shell|Write|Delete|Task|Read|Glob|Grep|Search|WebSearch|List|[\\s\\S]*MCP:[\\s\\S]*",
         "timeout": 5
       }
     ],

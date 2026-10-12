@@ -15,6 +15,10 @@ const repo = path.resolve(__dirname, '..');
 const argv = process.argv.slice(2);
 const flag = argv.indexOf('--installer-cursor-hooks');
 const installerCursorHooks = flag >= 0 ? argv.splice(flag, 2)[1] : null;
+// --installer-own-tools <file>: the installer's src/marrow-own-tools.js; the Cursor matchers must equal
+// the ones it builds.
+const ownFlag = argv.indexOf('--installer-own-tools');
+const installerOwnTools = ownFlag >= 0 ? argv.splice(ownFlag, 2)[1] : null;
 process.argv = [process.argv[0], process.argv[1], ...argv];
 const plugin = path.join(repo, 'plugins', 'marrow');
 const read = (file) => fs.readFileSync(path.join(repo, file), 'utf8');
@@ -139,11 +143,14 @@ check('hooks are exactly the installer\'s Claude Code events, entrypoints and fi
   assert.deepStrictEqual(start, [{ matcher: 'startup|resume', hooks: [{ type: 'command', command: `node "${CHECK}"`, timeout: 5 }] }]);
 });
 
-// Cursor: the hooks @getmarrow/install 0.1.69 writes with host approvals (MCP 3.9.99 and later), with
-// the npx command swapped for the plugin's launcher. beforeMCPExecution has no own-tool fast path:
-// every MCP call goes to the pinned hook, which decides Marrow's own tools itself.
-const CURSOR_PRE_MATCHER = 'Write|Delete|Task|Read|Glob|Grep|Search|WebSearch|List|MCP:(?!marrow(?:_.*|:marrow_.*)$).*';
-const CURSOR_MATCHER = 'Shell|Write|Delete|Task|Read|Glob|Grep|Search|WebSearch|List|MCP:(?!marrow(?:_.*|:marrow_.*)$).*';
+// Cursor: the hooks @getmarrow/install 0.1.70 writes with host approvals (MCP 3.9.99 and later), with
+// the npx command swapped for the plugin's launcher. The matchers are the installer's bytes
+// (OWN_TOOL_MATCHERS.cursor and .cursorPreToolUseHostApproval in src/marrow-own-tools.js): no MCP
+// label is skipped by name, because Cursor's preToolUse names an MCP tool `MCP:<tool>` without its
+// server. beforeMCPExecution has no own-tool fast path here: every MCP call goes to the pinned
+// hook, which allows Marrow's own tools only for the server exactly `marrow` and an exact name.
+const CURSOR_PRE_MATCHER = 'Write|Delete|Task|Read|Glob|Grep|Search|WebSearch|List|[\\s\\S]*MCP:[\\s\\S]*';
+const CURSOR_MATCHER = 'Shell|Write|Delete|Task|Read|Glob|Grep|Search|WebSearch|List|[\\s\\S]*MCP:[\\s\\S]*';
 // The plugin root, never a path relative to the project the agent works in (audit H1).
 const CURSOR_LAUNCH = 'node "${CURSOR_PLUGIN_ROOT}/scripts/marrow-launch.cjs"';
 const GATE = { timeout: 15, failClosed: true, async: false };
@@ -395,6 +402,31 @@ check('Cursor matchers gate exactly the names the installer\'s matchers gate', (
     for (const tool of tools) assert.strictEqual(mine.test(tool), master.test(tool), JSON.stringify(tool));
   }
   process.stdout.write(`  ${tools.length} names, identical decisions on both Cursor matchers\n`);
+});
+// Exact-name rule (installer 0.1.70, MCP 3.9.102): the matcher skips no MCP label at all. A name
+// that holds `MCP:` anywhere (a prefix, a look-alike server, a padded or re-cased name) reaches the
+// hook, which tells Marrow's own tools apart by the server and the exact name.
+check('Cursor matchers send every MCP label to the hook, look-alikes and padded names included', () => {
+  const mcpLabels = ['MCP:marrow_think', 'MCP:marrow', 'MCP:marrow_', 'MCP:marrow_delete_all', 'MCP:marrow:marrow_think', 'MCP:Marrow', 'MCP: marrow_think',
+    'MCP:MARROW', 'MCP:MARROW_THINK', 'MCP:Marrow_think', 'MCP:marrow_think ', 'MCP:marrow_think\n', 'MCP:marrow_think\0', ' MCP:marrow_think', 'MCP:marrowx',
+    'MCP:github_push', 'MCP:'];
+  for (const matcher of [cursorHooks.hooks.preToolUse[0].matcher, cursorHooks.hooks.postToolUse[0].matcher, cursorHooks.hooks.postToolUseFailure[0].matcher]) {
+    const re = new RegExp(matcher);
+    for (const label of mcpLabels) assert.ok(re.test(label), `${JSON.stringify(label)} must reach the hook`);
+    assert.ok(new RegExp(`^(?:${matcher})$`).test('MCP:marrow_think'), 'a full-match host also sends it');
+  }
+  assert.ok(!new RegExp(CURSOR_PRE_MATCHER).test('Shell'), 'preToolUse leaves Shell to beforeShellExecution');
+  assert.ok(new RegExp(CURSOR_MATCHER).test('Shell'));
+  assert.ok(!cursorHooks.hooks.preToolUse[0].matcher.includes('(?!'), 'no exemption in the matcher');
+});
+check('Cursor matchers equal the installer\'s own-tool matchers', () => {
+  if (!installerOwnTools) throw new Error('pass --installer-own-tools <marrow-install/src/marrow-own-tools.js>');
+  const built = require(path.resolve(installerOwnTools)).buildOwnToolMatchers();
+  assert.strictEqual(CURSOR_MATCHER, built.cursor);
+  assert.strictEqual(CURSOR_PRE_MATCHER, built.cursorPreToolUseHostApproval);
+  assert.strictEqual(cursorHooks.hooks.preToolUse[0].matcher, built.cursorPreToolUseHostApproval);
+  assert.strictEqual(cursorHooks.hooks.postToolUse[0].matcher, built.cursor);
+  assert.strictEqual(cursorHooks.hooks.postToolUseFailure[0].matcher, built.cursor);
 });
 check('exempt tool names equal the pinned release\'s default tool set', () => {
   const cli = process.argv[3];
