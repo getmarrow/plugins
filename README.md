@@ -136,7 +136,13 @@ rm -rf ~/.codex/plugins/data/marrow-getmarrow
 
 `codex plugin remove` leaves the package copy in `~/.codex/plugins/data/marrow-getmarrow` (about 3 MB); the `rm` step deletes it. The runtime state under `~/.marrow` and your key file stay, as above.
 
-Codex does not accept the tool-hook matcher that `npx @getmarrow/install` writes into `.codex/hooks.json`, so for protection in Codex use this plugin, not the installer. If the installer's `.codex/hooks.json` is also there, its context and session hooks run twice next to the plugin's; keep one copy. Hooks are cooperative, client-reported control.
+`npx @getmarrow/install` writes Codex hooks too, and what they do depends on its version:
+
+- **0.1.70 (the version published before 2026-10-19).** Its tool-hook matcher uses a lookahead that Codex rejects (`invalid matcher`), so its `PreToolUse` and `PostToolUse` hooks never load and no Codex tool call is checked. Only its context and session hooks run. For protection in Codex, use this plugin.
+- **0.1.71 and later (the 2026-10-19 release; not published until then).** The installer writes the matcher `*`, so its Codex hooks send every tool call to Marrow's check, Marrow's own tools included. The check itself is `@getmarrow/mcp`: from 3.9.103 it skips Marrow's own tools only when the host's own configuration proves that the `marrow` server is the official Marrow MCP server (the `npx -y @getmarrow/mcp` entry with no project or environment npm setting that could change where npx fetches it, the installed `marrow-mcp`, the installer's verified runtime, or this plugin, verified file by file and installed alone, with no other server that could give the same label). A look-alike server or plugin, or one Marrow cannot prove, is checked like any other tool. That needs the installer release to pin 3.9.103; until it does, the installer's hook runs 3.9.102 and skips by label alone, as this plugin's hooks do.
+- **This plugin's own hooks** run the `@getmarrow/mcp` 3.9.102 it pins. They get every tool call (`*`), and 3.9.102 skips by label alone (see the table above). Moving them to a newer MCP is a later plugin release: a plugin release cannot pin an MCP that already carries that release's pins ([docs/PLUGIN-RELEASE.md](docs/PLUGIN-RELEASE.md)).
+
+Use the plugin or the installer for Codex, not both. If the installer's `.codex/hooks.json` is also there, its context and session hooks run twice next to the plugin's, and from installer 0.1.71 its tool hooks run next to the plugin's as well, so every tool call is checked by two separate hooks; keep one copy. Hooks are cooperative, client-reported control.
 
 The bundled skill (`skills/marrow/SKILL.md` and `references/hosts.md` in both packages) is the `getmarrow/skills` copy byte for byte. Copy it from the skills repo when that changes; `--skills <checkout>` below fails if either package differs.
 
