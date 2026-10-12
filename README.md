@@ -154,6 +154,8 @@ Gemini CLI, Windsurf and other hosts get Marrow from the installer, run by the o
 
 ## Maintainers: changing the pins
 
+The Codex plugins are also pinned by `@getmarrow/mcp`: read [docs/PLUGIN-RELEASE.md](docs/PLUGIN-RELEASE.md) for the order before you change any of their six pinned files or bump their version. CI (`.github/workflows/codex-plugin-pins.yml`) fails on a pinned file that has no matching pin.
+
 1. Set the new exact versions in `plugins/marrow/package.json`, then `npm install --package-lock-only --ignore-scripts` there.
 2. In an empty directory with copies of `package.json` and `package-lock.json`: `npm ci --ignore-scripts`.
 3. `node tools/pin-manifest.cjs <that directory>`.
