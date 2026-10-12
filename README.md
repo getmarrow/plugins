@@ -38,7 +38,7 @@ Install **Marrow** from the Cursor plugin marketplace (Settings → Plugins), or
 Only the MCP server, without hooks, is a one-click link (a page renders it as a link or an "Add to Cursor" button):
 
 ```text
-cursor://anysphere.cursor-deeplink/mcp/install?name=marrow&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIi0tcGFja2FnZT1AZ2V0bWFycm93L21jcEAzLjkuMTAxIiwibWFycm93LW1jcCJdfQ==
+cursor://anysphere.cursor-deeplink/mcp/install?name=marrow&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIi0tcGFja2FnZT1AZ2V0bWFycm93L21jcEAzLjkuMTAyIiwibWFycm93LW1jcCJdfQ==
 ```
 
 The `config` value is base64 of `{"command":"npx","args":["-y","--package=@getmarrow/mcp@3.9.102","marrow-mcp"]}`, pinned, with no key and no `env`. The MCP server alone is advisory: approvals are enforced only by the plugin's hooks. Unlike the plugin, the link starts the server through `npx`, which can pick up a copy of `@getmarrow/mcp` that a project's `node_modules` claims at the same version. Prefer the plugin.

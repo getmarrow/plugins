@@ -450,5 +450,21 @@ function listRepo(dir) {
   return out;
 }
 
+check('every config= deeplink in every markdown file pins the MCP version of package.json', () => {
+  const want = pkg.dependencies['@getmarrow/mcp'];
+  let seen = 0;
+  for (const file of listRepo(repo).filter((f) => /\.(md|markdown)$/i.test(f))) {
+    for (const match of fs.readFileSync(file, 'utf8').matchAll(/[?&]config=([A-Za-z0-9+\/_-]+={0,2})/g)) {
+      seen += 1;
+      const where = path.relative(repo, file);
+      const config = JSON.parse(Buffer.from(match[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+      const specs = (config.args || []).filter((arg) => /@getmarrow\/mcp@/.test(arg));
+      assert.strictEqual(specs.length, 1, where + ': deeplink must name @getmarrow/mcp exactly once');
+      assert.ok(specs[0].endsWith('@getmarrow/mcp@' + want), where + ': deeplink pins ' + specs[0] + ', package.json pins ' + want);
+    }
+  }
+  assert.ok(seen > 0, 'no config= deeplink found to check');
+});
+
 process.stdout.write(failures ? `${failures} FAILED\n` : 'ALL PASS\n');
 process.exit(failures ? 1 : 0);
