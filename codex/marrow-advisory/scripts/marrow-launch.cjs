@@ -248,7 +248,10 @@ function main() {
   if (args.length === 0) {
     // A hook whose host dropped its arguments must never fall into MCP-server mode: the server
     // waits on stdin and times out, which fails open. The server is started only by the explicit
-    // `mcp` argument in the plugin's MCP config. Exit 2 blocks on every host that runs this launcher.
+    // `mcp` argument in the plugin's MCP config. This path prints one line to stderr, nothing to stdout,
+    // and exits 2 without starting anything. Per each host's hook rules, exit 2 stops a pre-action or
+    // prompt event; on a result, session or stop event it blocks nothing. No shipped hook command can
+    // reach it, because each one names its entrypoint inline.
     process.stderr.write('Marrow plugin: no entrypoint given (the MCP server needs the explicit "mcp" argument). Nothing was started.\n');
     process.exitCode = 2;
     return;
