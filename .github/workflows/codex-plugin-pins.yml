@@ -1,0 +1,24 @@
+name: codex-plugin-pins
+
+# Fails when a file the MCP pins in an official Codex plugin changes without matching pins in the
+# @getmarrow/mcp that decides for it. Read-only token, no secrets, no network after checkout.
+# The MCP check and its pins module are vendored in tools/mcp-pins with their SHA-256 (see its SOURCE.md).
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  pins:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Pins check (vendored MCP check, SHA-256 verified, plus one-byte self-test)
+        run: node tools/pins-check-ci.cjs
