@@ -2,13 +2,15 @@
 // Consistency and safety checks for the Codex packages (codex/marrow, codex/marrow-advisory). No network.
 //   node tools/codex-check.cjs [marrow-install/src/pins.js] [marrow-mcp/src/cli.ts or src/tool-catalog.ts] [marrow-install/src/installer.js]
 //     [--table <file>] [--rust <codex-matcher-check.wasm>]
-// --table writes the generated name table; --rust also compiles every matcher with Rust's `regex` crate
-// (tools/codex-rust-matcher, built for wasm32-wasip1) under Node's WASI and checks the whole table.
+// --table writes the generated name table; --rust also compiles every non-wildcard matcher with Rust's
+// `regex` crate (tools/codex-rust-matcher, built for wasm32-wasip1) under Node's WASI and checks the
+// whole table. The plugin's tool matcher is the wildcard `*`, which Codex does not compile, so the
+// Rust step has no plugin matcher to compile and only checks the installer's.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const assert = require('assert');
-const { OWN_TOOLS, OWN_NAMES, MATCHER, complement } = require('./codex-matcher.cjs');
+const { OWN_TOOLS, OWN_NAMES, MATCHER, codexMatches } = require('./codex-matcher.cjs');
 
 const repo = path.resolve(__dirname, '..');
 const argv = process.argv.slice(2);
@@ -42,10 +44,10 @@ const B = 'codex/marrow-advisory';
 const marketplace = json('.agents/plugins/marketplace.json');
 const hooks = json(`${A}/hooks/hooks.json`);
 const LAUNCH = 'node "${PLUGIN_ROOT}/scripts/marrow-launch.cjs"';
-// The installer's Codex matcher (marrow-install 0.1.70 src/installer.js CODEX_NATIVE_HOOK_MATCHER =
-// OWN_TOOL_MATCHERS.codex), built by the sibling src/marrow-own-tools.js. It skips the exact label
-// mcp__marrow__<registered name> for all 58 registered names, and it uses a lookahead that Codex's
-// Rust regex rejects, so the installer's Codex tool hooks still do not load in Codex.
+// The installer's Codex matcher (marrow-install src/installer.js CODEX_NATIVE_HOOK_MATCHER =
+// OWN_TOOL_MATCHERS.codex), built by the sibling src/marrow-own-tools.js. 0.1.70 wrote a lookahead
+// matcher that Codex's Rust regex rejects (its Codex tool hooks never loaded); the source after
+// 0.1.70 writes the wildcard `*`. Either way, this plugin must never gate less than it does.
 function installerMatcher() {
   if (!installerPath) throw new Error('pass the path to marrow-install/src/installer.js');
   const own = require(path.join(path.dirname(path.resolve(installerPath)), 'marrow-own-tools.js'));
@@ -197,7 +199,7 @@ check('no secret-looking values, no key variables with values, in the Codex file
   }
 });
 
-check('exempt names equal the pinned release\'s default tool set', () => {
+check('the default tool set equals the pinned release\'s, and no tool event names a tool', () => {
   if (!cliPath) throw new Error('pass the path to marrow-mcp/src/cli.ts (3.9.101) or src/tool-catalog.ts (3.9.102 on)');
   const source = fs.readFileSync(cliPath, 'utf8');
   const start = source.search(/const PRIMARY_TOOL_NAMES(?:: ReadonlySet<string>)? = new Set\(\[/);
@@ -205,12 +207,24 @@ check('exempt names equal the pinned release\'s default tool set', () => {
   const block = source.slice(start);
   const names = [...block.slice(0, block.indexOf(']);')).matchAll(/'(marrow_[a-z_]+)'/g)].map((m) => m[1]).sort();
   assert.deepStrictEqual(names, [...OWN_TOOLS].sort());
-  assert.strictEqual(MATCHER, complement(OWN_NAMES));
+  // No own-name exemption in any form: every tool event is the bare wildcard, and nothing in the
+  // hooks file (matchers, description, commands) carries a tool name or a lookaround.
+  assert.strictEqual(MATCHER, '*');
+  for (const event of ['PreToolUse', 'PostToolUse']) assert.strictEqual(hooks.hooks[event][0].matcher, '*', event);
+  for (const [event, entries] of Object.entries(hooks.hooks)) {
+    for (const entry of entries) {
+      if (typeof entry.matcher !== 'string') continue;
+      assert.ok(!/\(\?[!=<]/.test(entry.matcher) && !/marrow/i.test(entry.matcher) && !/mcp_/.test(entry.matcher), `${event} matcher names a tool`);
+    }
+  }
+  const raw = read(`${A}/hooks/hooks.json`);
+  assert.ok(!raw.includes('(?!') && !raw.includes('[^m]'), 'hooks.json still carries a complement matcher');
+  for (const tool of OWN_TOOLS) assert.ok(!raw.includes(tool), `hooks.json names ${tool}`);
 });
 
 // The name table. Codex names a plugin MCP tool mcp__<server>__<tool> in hook input (seen in Codex
-// 0.161.0: mcp__marrow__marrow_think) and its shell tool Bash. Every name is gated except the 17 exact
-// own names.
+// 0.161.0: mcp__marrow__marrow_think) and its shell tool Bash. Every name reaches the hook, the 17
+// own names and every look-alike alike; the plugin skips none.
 const FIXED = [
   'Bash', 'apply_patch', 'Edit', 'Write', 'MultiEdit', 'exec_command', 'write_stdin', 'view_image', 'web_search',
   'list_mcp_resources', 'read_mcp_resource', 'list_mcp_resource_templates', 'update_plan', 'spawn_agent',
@@ -237,38 +251,36 @@ function corpus() {
   return [...out];
 }
 const NAMES = corpus();
-const own = new Set(OWN_NAMES);
 
-check(`name table (${NAMES.length} names): only the 17 exact own names are skipped (JavaScript engine)`, () => {
-  const re = new RegExp(MATCHER);
-  let skipped = 0;
-  for (const name of NAMES) {
-    assert.strictEqual(re.test(name), !own.has(name), JSON.stringify(name));
-    if (!re.test(name)) skipped += 1;
+check(`name table (${NAMES.length} names): every name reaches the hook on both tool events, none is skipped`, () => {
+  assert.ok(NAMES.length > 1000 && OWN_NAMES.every((name) => NAMES.includes(name)));
+  for (const event of ['PreToolUse', 'PostToolUse']) {
+    const matcher = hooks.hooks[event][0].matcher;
+    for (const name of NAMES) assert.ok(codexMatches(matcher, name), `${event} skips ${JSON.stringify(name)}`);
   }
-  assert.strictEqual(skipped, OWN_NAMES.length);
 });
 
-check('never looser than the installer\'s intended Codex matcher (unanchored search, as Codex tests it)', () => {
+check('never looser than the installer\'s Codex matcher (unanchored search, as Codex tests it)', () => {
   const INSTALLER_MATCHER = installerMatcher();
-  const installer = new RegExp(INSTALLER_MATCHER);
-  const plugin = new RegExp(MATCHER);
   let installerSkips = 0;
   for (const name of NAMES) {
-    if (installer.test(name)) assert.ok(plugin.test(name) || own.has(name), `${JSON.stringify(name)} gated by the installer, skipped here`);
-    if (!installer.test(name) && plugin.test(name)) installerSkips += 1;
+    const installer = codexMatches(INSTALLER_MATCHER, name);
+    const plugin = codexMatches(MATCHER, name);
+    assert.ok(plugin, `${JSON.stringify(name)} skipped by the plugin matcher`);
+    if (!installer && plugin) installerSkips += 1;
   }
-  // The installer skips 41 more exact names (the registered tools outside the default 17) and every
-  // name without its tool words; this plugin gates all of those.
-  assert.ok(installerSkips > 0);
+  // The 0.1.70 installer matcher skips the exact label mcp__marrow__<registered name> for all 58
+  // registered names, so it skips more than this plugin ever did; later installer sources write `*`,
+  // which skips nothing. This plugin skips nothing.
+  assert.ok(installerSkips >= 0);
 });
 
 if (tableOut || wasm) {
   const hex = (s) => Buffer.from(s, 'utf8').toString('hex');
   const lines = [
-    ...Object.entries(hooks.hooks).filter(([, e]) => e[0].matcher === MATCHER).map(([event]) => `M ${event} ${hex(MATCHER)}`),
-    `I ${hex(installerMatcher())}`,
-    ...NAMES.map((name) => `N ${own.has(name) ? 0 : 1} ${hex(name)}`),
+    // The wildcard is not a regular expression and Codex never compiles it, so the plugin has no `M` line.
+    ...(installerMatcher() === '*' ? [] : [`I ${hex(installerMatcher())}`]),
+    ...NAMES.map((name) => `N 1 ${hex(name)}`),
   ];
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-table-')), 'table.txt');
   fs.writeFileSync(file, `${lines.join('\n')}\n`);

@@ -108,7 +108,7 @@ The same repository is a Codex marketplace (`.agents/plugins/marketplace.json`) 
 
 | Plugin | What it adds |
 | --- | --- |
-| `marrow` | Marrow's Codex hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SessionEnd`), the Marrow MCP server and the skill. The hooks run the pinned `@getmarrow/mcp` 3.9.102 Codex entrypoints, the ones `npx @getmarrow/install` writes into `.codex/hooks.json`. Their tool matcher sends Marrow every tool call except this plugin's own 17 Marrow tools, by exact name (`mcp__marrow__<tool>`). |
+| `marrow` | Marrow's Codex hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SessionEnd`), the Marrow MCP server and the skill. The hooks run the pinned `@getmarrow/mcp` 3.9.102 Codex entrypoints, the ones `npx @getmarrow/install` writes into `.codex/hooks.json`. Their tool matcher is `*`: every tool call reaches the hook, this plugin's own Marrow tools included, and the plugin exempts no tool by name. The pinned 3.9.102 hook then skips a call without a check when its label is exactly `mcp__marrow__<name>` for one of the 58 tool names the `marrow` server registers. It reads the label only and cannot tell which server produced it. |
 | `marrow-advisory` | Advisory only: the Marrow MCP server and the skill, with no hooks. Nothing is held; Marrow sees an action only when the agent calls a `marrow_*` tool. |
 
 Install one of them, not both: both name their MCP server `marrow`. Codex accepts both without a warning, and one server `marrow` then wins.
@@ -140,7 +140,7 @@ Codex does not accept the tool-hook matcher that `npx @getmarrow/install` writes
 
 The bundled skill (`skills/marrow/SKILL.md` and `references/hosts.md` in both packages) is the `getmarrow/skills` copy byte for byte. Copy it from the skills repo when that changes; `--skills <checkout>` below fails if either package differs.
 
-Maintainers: `node tools/codex-check.cjs <marrow-install>/src/pins.js <marrow-mcp>/src/cli.ts <marrow-install>/src/installer.js --skills <getmarrow/skills checkout> --rust <wasm>` checks both packages and the matcher's name table. Build the Rust checker once with `cargo build --release --target wasm32-wasip1` in `tools/codex-rust-matcher` (it compiles the matcher with the `regex` crate, the engine Codex uses). Change pins with `node tools/codex-pin-manifest.cjs <dir>` (same steps as above, for `codex/marrow`, then copy `package.json` and the lockfile into `codex/marrow-advisory`), and regenerate the matcher with `node tools/codex-matcher.cjs` when the default tool set changes.
+Maintainers: `node tools/codex-check.cjs <marrow-install>/src/pins.js <marrow-mcp>/src/cli.ts <marrow-install>/src/installer.js --skills <getmarrow/skills checkout> --rust <wasm>` checks both packages and the matcher's name table. Build the Rust checker once with `cargo build --release --target wasm32-wasip1` in `tools/codex-rust-matcher` (it compiles the matcher with the `regex` crate, the engine Codex uses). Change pins with `node tools/codex-pin-manifest.cjs <dir>` (same steps as above, for `codex/marrow`, then copy `package.json` and the lockfile into `codex/marrow-advisory`), and keep `OWN_TOOLS` in `tools/codex-matcher.cjs` equal to the default tool set. The tool matcher is the wildcard `*`, so no matcher is generated and no tool name belongs in `hooks/hooks.json`; `tools/codex-check.cjs` fails if one does.
 
 ## Using Marrow with other agents
 
