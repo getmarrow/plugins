@@ -48,7 +48,7 @@ codex plugin marketplace add getmarrow/plugins
 codex plugin add marrow@getmarrow
 ```
 
-Start a new Codex session, then review and trust the Marrow hooks in `/hooks`; Codex does not run plugin hooks until they are trusted. The installer's Codex hooks are not accepted by Codex, so do not send Codex users to the installer for protection, and do not run the installer's activate command for Codex.
+Start a new Codex session, then review and trust the Marrow hooks in `/hooks`; Codex does not run plugin hooks until they are trusted. Codex rejects the installer's Codex tool hooks (`PreToolUse` and `PostToolUse`, because of their matcher), so the installer holds nothing in Codex; its context and session hooks do run. Do not send Codex users to the installer for protection, and do not run the installer's activate command for Codex.
 
 **Gemini CLI, Windsurf, Cline, Grok** (and Cursor without the plugin):
 
