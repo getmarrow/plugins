@@ -1,6 +1,6 @@
 'use strict';
 // Consistency and safety checks for the Codex packages (codex/marrow, codex/marrow-advisory). No network.
-//   node tools/codex-check.cjs [marrow-install/src/pins.js] [marrow-mcp/src/cli.ts] [marrow-install/src/installer.js]
+//   node tools/codex-check.cjs [marrow-install/src/pins.js] [marrow-mcp/src/cli.ts or src/tool-catalog.ts] [marrow-install/src/installer.js]
 //     [--table <file>] [--rust <codex-matcher-check.wasm>]
 // --table writes the generated name table; --rust also compiles every matcher with Rust's `regex` crate
 // (tools/codex-rust-matcher, built for wasm32-wasip1) under Node's WASI and checks the whole table.
@@ -42,8 +42,15 @@ const B = 'codex/marrow-advisory';
 const marketplace = json('.agents/plugins/marketplace.json');
 const hooks = json(`${A}/hooks/hooks.json`);
 const LAUNCH = 'node "${PLUGIN_ROOT}/scripts/marrow-launch.cjs"';
-// The installer's Codex matcher (marrow-install 0.1.69 src/installer.js CODEX_NATIVE_HOOK_MATCHER).
-const INSTALLER_MATCHER = 'Bash|apply_patch|Edit|Write|MultiEdit|mcp__(?!marrow__marrow_).*|functions\\.(?!marrow_).*';
+// The installer's Codex matcher (marrow-install 0.1.70 src/installer.js CODEX_NATIVE_HOOK_MATCHER =
+// OWN_TOOL_MATCHERS.codex), built by the sibling src/marrow-own-tools.js. It skips the exact label
+// mcp__marrow__<registered name> for all 58 registered names, and it uses a lookahead that Codex's
+// Rust regex rejects, so the installer's Codex tool hooks still do not load in Codex.
+function installerMatcher() {
+  if (!installerPath) throw new Error('pass the path to marrow-install/src/installer.js');
+  const own = require(path.join(path.dirname(path.resolve(installerPath)), 'marrow-own-tools.js'));
+  return own.buildOwnToolMatchers().codex;
+}
 
 check('marketplace lists both Codex packages with policy and category', () => {
   assert.strictEqual(marketplace.name, 'getmarrow');
@@ -156,7 +163,7 @@ check('hooks are the installer\'s Codex events, entrypoints and timeouts, plus t
 if (installerPath) {
   check('installer writes the same Codex entrypoints, events and timeouts', () => {
     const src = fs.readFileSync(installerPath, 'utf8');
-    assert.ok(src.includes(`const CODEX_NATIVE_HOOK_MATCHER = '${INSTALLER_MATCHER.replace(/\\/g, '\\\\')}';`), 'installer matcher changed: re-check the never-looser table');
+    assert.ok(src.includes('const CODEX_NATIVE_HOOK_MATCHER = OWN_TOOL_MATCHERS.codex;'), 'installer matcher changed: re-check the never-looser table');
     for (const entry of ['codex-context-hook', 'codex-pre-action-hook', 'codex-hook', 'codex-session-hook']) {
       assert.ok(src.includes(`marrow-mcp ${entry}\``), entry);
     }
@@ -191,9 +198,11 @@ check('no secret-looking values, no key variables with values, in the Codex file
 });
 
 check('exempt names equal the pinned release\'s default tool set', () => {
-  if (!cliPath) throw new Error('pass the path to marrow-mcp/src/cli.ts');
+  if (!cliPath) throw new Error('pass the path to marrow-mcp/src/cli.ts (3.9.101) or src/tool-catalog.ts (3.9.102 on)');
   const source = fs.readFileSync(cliPath, 'utf8');
-  const block = source.slice(source.indexOf('const PRIMARY_TOOL_NAMES = new Set(['));
+  const start = source.search(/const PRIMARY_TOOL_NAMES(?:: ReadonlySet<string>)? = new Set\(\[/);
+  assert.ok(start >= 0, 'PRIMARY_TOOL_NAMES not found');
+  const block = source.slice(start);
   const names = [...block.slice(0, block.indexOf(']);')).matchAll(/'(marrow_[a-z_]+)'/g)].map((m) => m[1]).sort();
   assert.deepStrictEqual(names, [...OWN_TOOLS].sort());
   assert.strictEqual(MATCHER, complement(OWN_NAMES));
@@ -241,6 +250,7 @@ check(`name table (${NAMES.length} names): only the 17 exact own names are skipp
 });
 
 check('never looser than the installer\'s intended Codex matcher (unanchored search, as Codex tests it)', () => {
+  const INSTALLER_MATCHER = installerMatcher();
   const installer = new RegExp(INSTALLER_MATCHER);
   const plugin = new RegExp(MATCHER);
   let installerSkips = 0;
@@ -248,8 +258,8 @@ check('never looser than the installer\'s intended Codex matcher (unanchored sea
     if (installer.test(name)) assert.ok(plugin.test(name) || own.has(name), `${JSON.stringify(name)} gated by the installer, skipped here`);
     if (!installer.test(name) && plugin.test(name)) installerSkips += 1;
   }
-  // The installer's intent skips far more (every mcp__marrow__marrow_* and functions.marrow_* name and
-  // every name without its tool words); this plugin gates all of those.
+  // The installer skips 41 more exact names (the registered tools outside the default 17) and every
+  // name without its tool words; this plugin gates all of those.
   assert.ok(installerSkips > 0);
 });
 
@@ -257,7 +267,7 @@ if (tableOut || wasm) {
   const hex = (s) => Buffer.from(s, 'utf8').toString('hex');
   const lines = [
     ...Object.entries(hooks.hooks).filter(([, e]) => e[0].matcher === MATCHER).map(([event]) => `M ${event} ${hex(MATCHER)}`),
-    `I ${hex(INSTALLER_MATCHER)}`,
+    `I ${hex(installerMatcher())}`,
     ...NAMES.map((name) => `N ${own.has(name) ? 0 : 1} ${hex(name)}`),
   ];
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-table-')), 'table.txt');

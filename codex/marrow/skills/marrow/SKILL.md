@@ -5,8 +5,8 @@ license: MIT
 metadata:
   author: getmarrow
   version: "0.2.0"
-  install-package: "@getmarrow/install@0.1.69"
-  mcp-package: "@getmarrow/mcp@3.9.101"
+  install-package: "@getmarrow/install@0.1.70"
+  mcp-package: "@getmarrow/mcp@3.9.102"
 ---
 
 # Marrow
@@ -26,7 +26,7 @@ A model name, API key, installed configuration or detected hook file never prove
 3. Never edit, disable or work around Marrow's hooks, MCP entry, host settings, hook trust or permission rules to get past a hold, and never ask the person to do so.
 4. After meaningful work, record the real result with `marrow_commit`. Only `committed: true` confirms closure. Leave unfinished work visible.
 5. If Marrow is offline it says so. That is not a policy denial: low-risk work goes on and the record is queued. High-risk work still needs a fresh gate.
-6. For a consequential command on a host without Marrow hooks, run it through the governed wrapper: `npx -y @getmarrow/install@0.1.69 run -- -- <command>`. It covers only that command.
+6. For a consequential command on a host without Marrow hooks, run it through the governed wrapper: `npx -y @getmarrow/install@0.1.70 run -- -- <command>`. It covers only that command.
 
 ## Setting Marrow up
 
@@ -71,4 +71,4 @@ With the Claude Code, Cursor or Codex plugin installed, the plugin needs only th
 
 Packages never update themselves. When Marrow returns a `client_update` notice, tell the operator and give its exact update and verification commands. Run them only when the owner asks.
 
-To remove Marrow from a project: `npx -y @getmarrow/install@0.1.69 uninstall` previews what would be removed; add `--yes` to remove Marrow's own entries. The owner's other hooks and settings stay. Restart the hosts afterwards. In Claude Code with the plugin: `claude plugin uninstall marrow@getmarrow`. In Cursor with the plugin: uninstall it in Settings → Plugins, then `rm -rf ~/.marrow/cursor-plugin`. In Codex with the plugin: `codex plugin remove marrow@getmarrow` (or `marrow-advisory@getmarrow`), then `rm -rf ~/.codex/plugins/data/marrow-getmarrow`, which holds the plugin's package copy.
+To remove Marrow from a project: `npx -y @getmarrow/install@0.1.70 uninstall` previews what would be removed; add `--yes` to remove Marrow's own entries. The owner's other hooks and settings stay. Restart the hosts afterwards. In Claude Code with the plugin: `claude plugin uninstall marrow@getmarrow`. In Cursor with the plugin: uninstall it in Settings → Plugins, then `rm -rf ~/.marrow/cursor-plugin`. In Codex with the plugin: `codex plugin remove marrow@getmarrow` (or `marrow-advisory@getmarrow`), then `rm -rf ~/.codex/plugins/data/marrow-getmarrow`, which holds the plugin's package copy.

@@ -75,7 +75,7 @@ if (config && (serverIn(config)
 if (found.length > 0) {
   const where = found.join(', ');
   process.stdout.write(JSON.stringify({
-    systemMessage: `Marrow is also set up outside the marrow plugin (${where}). Both copies run, so Marrow checks and records each action twice. Keep one. To keep this plugin: remove installer hooks or servers by previewing \`npx -y @getmarrow/install@0.1.69 uninstall\` in this project's terminal (it lists Marrow entries for every host here; add --yes to apply), disable any other plugin named marrow in /plugin, then restart Claude Code. To keep the other copy instead, run \`claude plugin uninstall marrow@getmarrow\`.`,
+    systemMessage: `Marrow is also set up outside the marrow plugin (${where}). Both copies run, so Marrow checks and records each action twice. Keep one. To keep this plugin: remove installer hooks or servers by previewing \`npx -y @getmarrow/install@0.1.70 uninstall\` in this project's terminal (it lists Marrow entries for every host here; add --yes to apply), disable any other plugin named marrow in /plugin, then restart Claude Code. To keep the other copy instead, run \`claude plugin uninstall marrow@getmarrow\`.`,
     hookSpecificOutput: {
       hookEventName: 'SessionStart',
       additionalContext: `Marrow is configured twice in this session (the marrow plugin and ${where}). Tell the user once. Do not edit settings, hooks or plugin files yourself; the user chooses which copy to keep.`,

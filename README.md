@@ -29,7 +29,7 @@ No account or key is needed to install. Claude Code shows what the plugin adds b
 
 Check that `claude plugin marketplace list` shows `getmarrow` coming from `getmarrow/plugins`, and that `claude plugin list` shows exactly one `marrow@...` plugin.
 
-To stay on one reviewed release of the marketplace itself, add it by tag: `/plugin marketplace add getmarrow/plugins#v0.2.0`.
+To stay on one reviewed release of the marketplace itself, add it by tag: `/plugin marketplace add getmarrow/plugins#v0.2.1`.
 
 ## Install in Cursor
 
@@ -41,17 +41,17 @@ Only the MCP server, without hooks, is a one-click link (a page renders it as a 
 cursor://anysphere.cursor-deeplink/mcp/install?name=marrow&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIi0tcGFja2FnZT1AZ2V0bWFycm93L21jcEAzLjkuMTAxIiwibWFycm93LW1jcCJdfQ==
 ```
 
-The `config` value is base64 of `{"command":"npx","args":["-y","--package=@getmarrow/mcp@3.9.101","marrow-mcp"]}`, pinned, with no key and no `env`. The MCP server alone is advisory: approvals are enforced only by the plugin's hooks. Unlike the plugin, the link starts the server through `npx`, which can pick up a copy of `@getmarrow/mcp` that a project's `node_modules` claims at the same version. Prefer the plugin.
+The `config` value is base64 of `{"command":"npx","args":["-y","--package=@getmarrow/mcp@3.9.102","marrow-mcp"]}`, pinned, with no key and no `env`. The MCP server alone is advisory: approvals are enforced only by the plugin's hooks. Unlike the plugin, the link starts the server through `npx`, which can pick up a copy of `@getmarrow/mcp` that a project's `node_modules` claims at the same version. Prefer the plugin.
 
 ## What each plugin adds
 
 | Component | Claude Code (`plugins/marrow`) | Cursor (`plugins/marrow-cursor`) |
 | --- | --- | --- |
-| Hooks | `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`, and the async `PermissionRequest` and `PostToolBatch` hooks: the events `npx @getmarrow/install` writes into `.claude/settings.json`. Their tool matcher sends Marrow every tool call the installer's matcher does, and skips only this plugin's own 17 Marrow tools by exact name. A warn-only `SessionStart` check says when Marrow is also set up outside the plugin or another plugin named `marrow` is enabled. | The ten hooks `npx @getmarrow/install` 0.1.69 writes into `.cursor/hooks.json`: `preToolUse`, `beforeShellExecution` and `beforeMCPExecution` (15 s, `failClosed`), `postToolUse`, `postToolUseFailure`, `afterShellExecution`, `afterMCPExecution`, `stop`, `sessionStart` and `beforeSubmitPrompt`, with the installer's matchers byte for byte. |
+| Hooks | `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`, and the async `PermissionRequest` and `PostToolBatch` hooks: the events `npx @getmarrow/install` writes into `.claude/settings.json`. Their tool matcher sends Marrow every tool call the installer's matcher does, and skips only this plugin's own 17 Marrow tools by exact name. A warn-only `SessionStart` check says when Marrow is also set up outside the plugin or another plugin named `marrow` is enabled. | The ten hooks `npx @getmarrow/install` 0.1.70 writes into `.cursor/hooks.json`: `preToolUse`, `beforeShellExecution` and `beforeMCPExecution` (15 s, `failClosed`), `postToolUse`, `postToolUseFailure`, `afterShellExecution`, `afterMCPExecution`, `stop`, `sessionStart` and `beforeSubmitPrompt`, with the installer's matchers byte for byte. |
 | MCP server | `.mcp.json`: server `marrow`. Its tools are on demand. | `mcp.json`: server `marrow`. Its tools are on demand. |
 | Skill | `skills/marrow`: when to call Marrow, holds and approvals, the key step, update commands. | `skills/marrow`: the same rules for Cursor. |
 
-Both run the pinned `@getmarrow/mcp` 3.9.101 entrypoints, the same ones the installer writes, through the same launcher. The plugins add no policy of their own.
+Both run the pinned `@getmarrow/mcp` 3.9.102 entrypoints, the same ones the installer writes, through the same launcher. The plugins add no policy of their own.
 
 Hooks are cooperative, client-reported control. They act only while the plugin is enabled and the host runs them. A configured hook never proves coverage or enforcement on its own.
 
@@ -75,7 +75,7 @@ The plugins carry the hooks, so the hold message's "run the installer activate c
 
 ## Pinned versions and updates
 
-- `package.json` and `package-lock.json` (the same files in both plugins) pin `@getmarrow/mcp` 3.9.101 and `@getmarrow/sdk` 3.7.65 with sha512 integrity, equal to `@getmarrow/install` 0.1.69's `src/pins.js`.
+- `package.json` and `package-lock.json` (the same files in both plugins) pin `@getmarrow/mcp` 3.9.102 and `@getmarrow/sdk` 3.7.65 with sha512 integrity, equal to `@getmarrow/install` 0.1.70's `src/pins.js`.
 - Hooks start the package with `node`, not `npx`. Each start checks every file against `scripts/mcp-manifest.json`. Claude Code installs the lockfile into the plugin's cached copy with install scripts disabled. If that copy is missing or changed, or on Cursor, which installs no plugin dependencies, the launcher installs the same lockfile once (`npm ci --ignore-scripts`, outside your project) and checks that copy the same way. Claude Code keeps it in the plugin's data folder (`~/.claude/plugins/data/`, removed on uninstall), Cursor in `~/.marrow/cursor-plugin` (mode 700), Codex in `~/.codex/plugins/data/marrow-getmarrow/`. Nothing is fetched by version at run time and nothing runs from your project's `node_modules`.
 - If no verified copy can be loaded (for example, offline on first use), the pre-action hook holds tool calls with a "Marrow plugin:" message until it can, and the other hooks report a non-blocking error.
 - Each plugin sets `version`, so the host keeps you on the installed copy until a new version is published and you update. Third-party Claude Code marketplaces do not auto-update unless you turn that on.
@@ -108,7 +108,7 @@ The same repository is a Codex marketplace (`.agents/plugins/marketplace.json`) 
 
 | Plugin | What it adds |
 | --- | --- |
-| `marrow` | Marrow's Codex hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SessionEnd`), the Marrow MCP server and the skill. The hooks run the pinned `@getmarrow/mcp` 3.9.101 Codex entrypoints, the ones `npx @getmarrow/install` writes into `.codex/hooks.json`. Their tool matcher sends Marrow every tool call except this plugin's own 17 Marrow tools, by exact name (`mcp__marrow__<tool>`). |
+| `marrow` | Marrow's Codex hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SessionEnd`), the Marrow MCP server and the skill. The hooks run the pinned `@getmarrow/mcp` 3.9.102 Codex entrypoints, the ones `npx @getmarrow/install` writes into `.codex/hooks.json`. Their tool matcher sends Marrow every tool call except this plugin's own 17 Marrow tools, by exact name (`mcp__marrow__<tool>`). |
 | `marrow-advisory` | Advisory only: the Marrow MCP server and the skill, with no hooks. Nothing is held; Marrow sees an action only when the agent calls a `marrow_*` tool. |
 
 Install one of them, not both: both name their MCP server `marrow`. Codex accepts both without a warning, and one server `marrow` then wins.

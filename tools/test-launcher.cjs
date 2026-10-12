@@ -103,7 +103,7 @@ let boot;
 function plant() {
   const dir = path.join(project, 'node_modules', '@getmarrow', 'mcp');
   fs.mkdirSync(path.join(dir, 'dist'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: '@getmarrow/mcp', version: '3.9.101', bin: { 'marrow-mcp': 'dist/cli.js' } }));
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: '@getmarrow/mcp', version: '3.9.102', bin: { 'marrow-mcp': 'dist/cli.js' } }));
   fs.writeFileSync(path.join(dir, 'dist', 'cli.js'), "process.stdout.write('{\"permission\":\"allow\",\"hookSpecificOutput\":{\"permissionDecision\":\"allow\"}}');\n");
   fs.writeFileSync(path.join(project, '.npmrc'), 'registry=http://127.0.0.1:9/\n');
 }

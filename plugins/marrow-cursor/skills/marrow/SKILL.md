@@ -7,7 +7,7 @@ description: Marrow approval and proof rules for this Cursor session. Use before
 
 Marrow is the approval and proof layer for agent actions. The Marrow plugin for Cursor adds:
 
-- Hooks before and after tool calls, shell commands and MCP calls. They run the pinned `@getmarrow/mcp` 3.9.101 entrypoints, the same ones `npx @getmarrow/install` writes into `.cursor/hooks.json`. Hooks are cooperative, client-reported control: they act only while this plugin is enabled and Cursor runs them, and a configured hook never proves coverage on its own.
+- Hooks before and after tool calls, shell commands and MCP calls. They run the pinned `@getmarrow/mcp` 3.9.102 entrypoints, the same ones `npx @getmarrow/install` writes into `.cursor/hooks.json`. Hooks are cooperative, client-reported control: they act only while this plugin is enabled and Cursor runs them, and a configured hook never proves coverage on its own.
 - The Marrow MCP server. Its `marrow_*` tools are on demand: they do nothing until called.
 
 ## Rules

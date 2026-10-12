@@ -14,6 +14,6 @@ The installer writes only for hosts it detects in the project (or, for Grok and 
 
 Codex: install the plugin, not the installer, for protection. To remove it: `codex plugin remove marrow@getmarrow` (or `marrow-advisory@getmarrow`), then `rm -rf ~/.codex/plugins/data/marrow-getmarrow`.
 
-Other agents (OpenCode, DeepSeek, Qwen, Kimi, MiniMax, GLM and custom hosts) are not detected. Govern their consequential commands with the wrapper, `npx -y @getmarrow/install@0.1.69 run -- -- <command>`, labelled with `MARROW_CLIENT`; a custom host needs a bounded event adapter.
+Other agents (OpenCode, DeepSeek, Qwen, Kimi, MiniMax, GLM and custom hosts) are not detected. Govern their consequential commands with the wrapper, `npx -y @getmarrow/install@0.1.70 run -- -- <command>`, labelled with `MARROW_CLIENT`; a custom host needs a bounded event adapter.
 
 After the restart and review, verify once: `npx -y @getmarrow/install@latest doctor`.

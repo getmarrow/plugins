@@ -1,8 +1,8 @@
 {
   "schema": "marrow-plugin-mcp-manifest.v1",
   "mcp": {
-    "version": "3.9.101",
-    "integrity": "sha512-nnpJmxO7NnE8orWB+Ee+qcC5vIWjS1SslCSTn/vhRF6dvbsK2GXezZ+jBOjnfBFEMPPROr51MzNpJb+HMYp1Fg=="
+    "version": "3.9.102",
+    "integrity": "sha512-hTs4jTJmySLk8hHgsGIZksMo9+eO5kjQmU1EJyDX8Qqm9Z+V+yDkauop19roasVvOAFsK3dJjqLoIh7gRhoXJQ=="
   },
   "sdk": {
     "version": "3.7.65",
@@ -96,6 +96,10 @@
     "@getmarrow/mcp/dist/normalized-action.d.ts.map",
     "@getmarrow/mcp/dist/normalized-action.js",
     "@getmarrow/mcp/dist/normalized-action.js.map",
+    "@getmarrow/mcp/dist/own-tool.d.ts",
+    "@getmarrow/mcp/dist/own-tool.d.ts.map",
+    "@getmarrow/mcp/dist/own-tool.js",
+    "@getmarrow/mcp/dist/own-tool.js.map",
     "@getmarrow/mcp/dist/ping-state.d.ts",
     "@getmarrow/mcp/dist/ping-state.d.ts.map",
     "@getmarrow/mcp/dist/ping-state.js",
@@ -124,6 +128,10 @@
     "@getmarrow/mcp/dist/status-cache.d.ts.map",
     "@getmarrow/mcp/dist/status-cache.js",
     "@getmarrow/mcp/dist/status-cache.js.map",
+    "@getmarrow/mcp/dist/tool-catalog.d.ts",
+    "@getmarrow/mcp/dist/tool-catalog.d.ts.map",
+    "@getmarrow/mcp/dist/tool-catalog.js",
+    "@getmarrow/mcp/dist/tool-catalog.js.map",
     "@getmarrow/mcp/dist/types.d.ts",
     "@getmarrow/mcp/dist/types.d.ts.map",
     "@getmarrow/mcp/dist/types.js",
@@ -177,5 +185,5 @@
     "@getmarrow/sdk/dist/types.js.map",
     "@getmarrow/sdk/package.json"
   ],
-  "sha256": "37e094ffbe6ef38c8aa1142c6448f97d9b0855ab6ad7f334529dfa1a7dfd53b9"
+  "sha256": "945c87dfc41a575743f9c7e01ea1692d703b920f787335c4edf61db26de86eb3"
 }

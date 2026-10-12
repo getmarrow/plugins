@@ -7,7 +7,7 @@ description: Marrow approval and proof rules for this Claude Code session. Use b
 
 Marrow is the approval and proof layer for agent actions. The marrow plugin adds:
 
-- Hooks before and after tool calls. They run the pinned `@getmarrow/mcp` 3.9.101 entrypoints, the same ones `npx @getmarrow/install` writes. Hooks are cooperative, client-reported control: they act only while this plugin is enabled and Claude Code runs them, and a configured hook never proves coverage on its own.
+- Hooks before and after tool calls. They run the pinned `@getmarrow/mcp` 3.9.102 entrypoints, the same ones `npx @getmarrow/install` writes. Hooks are cooperative, client-reported control: they act only while this plugin is enabled and Claude Code runs them, and a configured hook never proves coverage on its own.
 - The Marrow MCP server. Its `marrow_*` tools are on demand: they do nothing until called.
 
 ## Rules
