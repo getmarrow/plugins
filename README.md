@@ -31,8 +31,6 @@ No account or key is needed to install. Claude Code shows what the plugin adds b
 
 Check that `claude plugin marketplace list` shows `getmarrow` coming from `getmarrow/plugins`, and that `claude plugin list` shows exactly one `marrow@...` plugin.
 
-To stay on one reviewed release of the marketplace itself, add it by tag: `/plugin marketplace add getmarrow/plugins#v0.2.2`.
-
 ## Install in Cursor
 
 Install **Marrow** from the Cursor plugin marketplace (Settings → Plugins), or add this repository as a plugin source. No account or key is needed to install, and no plugin config holds a key. The hooks and MCP server need Node.js 18 or later on `PATH`, and the first hook call installs the pinned package once (see "Pinned versions" below), so the first call needs the network. Restart Cursor after installing, then check that Cursor's hooks view lists Marrow's hooks.
