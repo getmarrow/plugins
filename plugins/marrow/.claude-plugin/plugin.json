@@ -13,7 +13,7 @@
   "keywords": ["governance", "approvals", "hooks", "mcp", "audit", "agent-control"],
   "metadata": {
     "pins": {
-      "@getmarrow/mcp": "3.9.102",
+      "@getmarrow/mcp": "3.9.103",
       "@getmarrow/sdk": "3.7.65"
     }
   }
