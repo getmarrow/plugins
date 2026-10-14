@@ -31,7 +31,7 @@ No account or key is needed to install. Claude Code shows what the plugin adds b
 
 Check that `claude plugin marketplace list` shows `getmarrow` coming from `getmarrow/plugins`, and that `claude plugin list` shows exactly one `marrow@...` plugin.
 
-To stay on one reviewed release of the marketplace itself, add it by tag: `/plugin marketplace add getmarrow/plugins#v0.2.1`.
+To stay on one reviewed release of the marketplace itself, add it by tag: `/plugin marketplace add getmarrow/plugins#v0.2.2`.
 
 ## Install in Cursor
 
