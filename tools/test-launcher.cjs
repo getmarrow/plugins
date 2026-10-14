@@ -54,7 +54,9 @@ function freshPlugin({ withModules }) {
 const event = (tool, input) => JSON.stringify(host === 'cursor'
   ? { hook_event_name: 'preToolUse', conversation_id: 't', generation_id: 'g', tool_name: tool, tool_input: input, workspace_roots: [project], cwd: project }
   : { session_id: 't', cwd: project, hook_event_name: 'PreToolUse', tool_name: tool, tool_input: input, tool_use_id: `t-${Date.now()}` });
-const PUSH = host === 'cursor' ? event('Shell', { command: 'git push origin main' }) : event('Bash', { command: 'git push origin main' });
+// A force-push to a protected branch is stopped by every pinned release: 3.9.102 holds it for the missing key, 3.9.103 and later stop it
+// with the keyless seatbelt. A plain push would pass the seatbelt (the host's own approval step decides), so it proves nothing here.
+const PUSH = host === 'cursor' ? event('Shell', { command: 'git push --force origin main' }) : event('Bash', { command: 'git push --force origin main' });
 
 function launch(plugin, args, { env = {}, input = PUSH } = {}) {
   const started = Date.now();
@@ -64,8 +66,9 @@ function launch(plugin, args, { env = {}, input = PUSH } = {}) {
   });
   return { status: r.status, stdout: r.stdout || '', stderr: r.stderr || '', ms: Date.now() - started };
 }
-// The package's own no-key deny proves the genuine pinned entrypoint ran.
-const genuine = (r) => /no API key/.test(r.stdout + r.stderr);
+// The package's own deny proves the genuine pinned entrypoint ran: the no-key hold (3.9.102) or the seatbelt stop (3.9.103 and later).
+const OWN_DENY = /no API key|MARROW SEATBELT stopped this action/;
+const genuine = (r) => OWN_DENY.test(r.stdout + r.stderr);
 const heldByLauncher = (r) => (host === 'cursor'
   ? r.status === 2 && /Marrow plugin:/.test(r.stderr) && /"permission":"deny"/.test(r.stdout)
   : r.status === 0 && /"permissionDecision":"deny"/.test(r.stdout) && /Marrow plugin:/.test(r.stdout));
@@ -188,7 +191,7 @@ async function concurrent() {
     child.on('close', () => resolve(out));
     child.stdin.end(PUSH);
   })));
-  const ok = runs.filter((o) => /no API key/.test(o)).length;
+  const ok = runs.filter((o) => OWN_DENY.test(o)).length;
   result(ok === 4 && dataCopies(p).length === 1, '9 concurrent starts: 4/4 ran, one copy, no leftovers', `${ok}/4, entries ${dataCopies(p).join(',')}`);
 }
 // 10 MCP server start with no key: stdout stays clean for the MCP protocol

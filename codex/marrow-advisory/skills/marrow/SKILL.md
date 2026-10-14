@@ -41,6 +41,8 @@ Show the owner these steps. The owner runs them in their own terminal; run a set
 
 **Cursor:** use the Marrow plugin from Cursor's plugin marketplace (Settings → Plugins). No account or key is needed to install; restart Cursor afterwards.
 
+The Claude Code and Cursor plugins run `@getmarrow/mcp` 3.9.103, which includes the free keyless seatbelt: with no key and no sign of a Marrow account on the machine, their hooks stop seven kinds of action with the host's own deny and make no network call: changes to Marrow's own hooks, settings or plugins (and owner-only Marrow commands), force-push or delete of a protected branch, a production deploy, a package publish, reading credentials or secrets (a project `.env` file other than a template included), a recursive delete outside the workspace, and decoded data run by a shell or interpreter. Everything else gets no Marrow decision, so the host's own approval step decides (Cursor asks with its own approval prompt before a shell command that a hook without a key used to hold (for example `git commit` or `git push`)). It is a seatbelt, not a vault: a determined agent can get around a local check. With an account, Marrow holds risky actions for approval and keeps the audit trail.
+
 **Codex:** use the Marrow Codex plugin. Install one of the two, never both (both name their MCP server `marrow`): `marrow` holds protected actions with hooks, `marrow-advisory` has no hooks and holds nothing. No account or key is needed to install:
 
 ```bash
@@ -48,7 +50,7 @@ codex plugin marketplace add getmarrow/plugins
 codex plugin add marrow@getmarrow
 ```
 
-Start a new Codex session, then review and trust the Marrow hooks in `/hooks`; Codex does not run plugin hooks until they are trusted. What the installer's Codex tool hooks (`PreToolUse` and `PostToolUse`) do depends on its version. `@getmarrow/install` 0.1.70 wrote a matcher that Codex rejects, so with 0.1.70 the installer holds nothing in Codex; its context and session hooks do run. From 0.1.71 (the 2026-10-19 release, not published before then) the installer writes the matcher `*`, so its Codex hooks send every tool call to Marrow's check; `@getmarrow/mcp` 3.9.103 skips Marrow's own tools only when the host's own configuration proves the `marrow` server is the official Marrow MCP server, and checks a look-alike like any other tool. Use the plugin or the installer for Codex, not both. Until installer 0.1.71 is published, do not send Codex users to the installer for protection and do not run the installer's activate command for Codex.
+Start a new Codex session, then review and trust the Marrow hooks in `/hooks`; Codex does not run plugin hooks until they are trusted. What the installer's Codex tool hooks (`PreToolUse` and `PostToolUse`) do depends on its version. `@getmarrow/install` 0.1.70 and earlier wrote a matcher that Codex rejects, so with those versions the installer holds nothing in Codex; its context and session hooks do run. From 0.1.71 the installer writes the matcher `*`, so its Codex hooks send every tool call to Marrow's check; `@getmarrow/mcp` 3.9.103 skips Marrow's own tools only when the host's own configuration proves the `marrow` server is the official Marrow MCP server, and checks a look-alike like any other tool. Use the plugin or the installer for Codex, not both. With installer 0.1.70 or earlier, do not send Codex users to the installer for protection and do not run the installer's activate command for Codex. The Codex plugins pin `@getmarrow/mcp` 3.9.102 and do not include the keyless seatbelt; it comes to them with the next update.
 
 **Gemini CLI, Windsurf, Cline, Grok** (and Cursor without the plugin):
 
@@ -65,7 +67,7 @@ mkdir -p ~/.marrow && chmod 700 ~/.marrow
 chmod 600 ~/.marrow/env
 ```
 
-With the Claude Code, Cursor or Codex plugin installed, the plugin needs only that key file (or `MARROW_API_KEY`), then a reload or restart. Do not run step 2 for that host in the same project, even when a Marrow message says to run the installer activate command: step 2 writes a second copy of the hooks, which then run twice next to the plugin's. If both are there, the owner chooses which copy to keep.
+To connect an account with the Claude Code, Cursor or Codex plugin installed, the plugin needs only that key file (or `MARROW_API_KEY`), then a reload or restart. Do not run step 2 for that host in the same project, even when a Marrow message says to run the installer activate command: step 2 writes a second copy of the hooks, which then run twice next to the plugin's. If both are there, the owner chooses which copy to keep.
 
 ## Updates and removal
 

@@ -7,7 +7,7 @@ description: Marrow approval and proof rules for this Claude Code session. Use b
 
 Marrow is the approval and proof layer for agent actions. The marrow plugin adds:
 
-- Hooks before and after tool calls. They run the pinned `@getmarrow/mcp` 3.9.102 entrypoints, the same ones `npx @getmarrow/install` writes. Hooks are cooperative, client-reported control: they act only while this plugin is enabled and Claude Code runs them, and a configured hook never proves coverage on its own.
+- Hooks before and after tool calls. They run the pinned `@getmarrow/mcp` 3.9.103 entrypoints, the same ones `npx @getmarrow/install` writes. Hooks are cooperative, client-reported control: they act only while this plugin is enabled and Claude Code runs them, and a configured hook never proves coverage on its own.
 - The Marrow MCP server. Its `marrow_*` tools are on demand: they do nothing until called.
 
 ## Rules
@@ -20,13 +20,14 @@ Marrow is the approval and proof layer for agent actions. The marrow plugin adds
 
 ## No key yet
 
-Installing the plugin needs no account and no key. Until a key exists:
+Installing the plugin needs no account and no key. The hooks run `@getmarrow/mcp` 3.9.103, which includes the free keyless seatbelt: when there is no usable key and the machine shows no sign of a Marrow account, they stop seven kinds of action with the host's own deny and make no network call. The seven are changes to Marrow's own hooks, settings or plugins (and owner-only Marrow commands), force-push or delete of a protected branch, a production deploy, a package publish, reading credentials or secrets (a project `.env` file other than a template included), a recursive delete outside the workspace, and decoded data run by a shell or interpreter. Everything else gets no Marrow decision, so Claude Code's own approval step decides. It is a seatbelt, not a vault: a determined agent can get around a local check. With an account, Marrow holds risky actions for approval and keeps the audit trail.
 
-- read-only and routine tool calls run as usual;
-- protected actions (deploy, publish, push, credential access and similar) are held with "Marrow has no API key on this machine";
-- the Marrow MCP server does not start.
+When a seatbelt stop appears, tell the person what was stopped; it needs the machine owner. Do not retry it another way, and do not change Marrow's hooks, settings or plugins to get past it. Until a key exists:
 
-To connect, the owner does this in their own terminal, never in chat:
+- the Marrow MCP server does not start;
+- if the seatbelt cannot run on this machine (a home or agent settings folder that others can write), every hold stays, and the hold says "Marrow has no working key on this machine and its keyless mode is off here".
+
+To connect an account, the owner does this in their own terminal, never in chat:
 
 1. Create an agent key at https://getmarrow.ai.
 2. Keep it in a file Marrow reads:
@@ -40,7 +41,7 @@ To connect, the owner does this in their own terminal, never in chat:
    Or set `MARROW_API_KEY` in the environment that starts Claude Code.
 3. Run `/reload-plugins` or restart Claude Code.
 
-Never ask for the key in chat, never print it, and never put it on a command line yourself. With this plugin installed, do not suggest the installer activate command (`npx -y @getmarrow/install@latest activate`) or `marrow-mcp setup` for Claude Code in the same project, even when a Marrow message says to run them: they write a second copy of the hooks. The key step above is all the plugin needs. To check the key and connection, the owner can run `npx -y @getmarrow/install@latest doctor`, which only reads; until `@getmarrow/install` 0.1.70 it reports Claude Code hooks as missing because this plugin holds them.
+Never ask for the key in chat, never print it, and never put it on a command line yourself. With this plugin installed, do not suggest the installer activate command (`npx -y @getmarrow/install@latest activate`) or `marrow-mcp setup` for Claude Code in the same project, nor the installer's `--repair`, even when a Marrow message says to run them: they write a second copy of the hooks. The key step above is all the plugin needs to connect an account. To check the key and connection, the owner can run `npx -y @getmarrow/install@latest doctor`, which only reads; installer 0.1.71 and later count this plugin's hooks, and 0.1.70 and earlier report Claude Code hooks as missing because this plugin holds them.
 
 If a call is held with "Marrow plugin: ... could not load a verified copy", Marrow itself could not start. Tell the owner the message; do not retry around it.
 

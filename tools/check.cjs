@@ -102,6 +102,12 @@ check('mcp-manifest.json matches the lockfile', () => {
   assert.strictEqual(pins.bin, '@getmarrow/mcp/dist/cli.js');
   assert.ok(pins.files.includes(pins.bin));
   assert.match(pins.sha256, /^[0-9a-f]{64}$/);
+  // The re-pin records the marrow-mcp commit the pinned tarball was packed from (optional; the launcher ignores it).
+  if (pins.source !== undefined) {
+    assert.deepStrictEqual(Object.keys(pins.source).sort(), ['commit', 'repository']);
+    assert.strictEqual(pins.source.repository, 'getmarrow/marrow-mcp');
+    assert.match(pins.source.commit, /^[0-9a-f]{40}$/);
+  }
 });
 
 const pinsPath = process.argv[2];

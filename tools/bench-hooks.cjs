@@ -27,7 +27,7 @@ const cwd = path.join(home, 'project');
 const event = (name, tool, input, extra = {}) => JSON.stringify({ session_id: 'bench', cwd, hook_event_name: name, tool_name: tool, tool_input: input, tool_use_id: `b-${tool}`, ...extra });
 const events = {
   read: ['claude-pre-action-hook', event('PreToolUse', 'Read', { file_path: '/etc/hostname' })],
-  push: ['claude-pre-action-hook', event('PreToolUse', 'Bash', { command: 'git push origin main' })],
+  push: ['claude-pre-action-hook', event('PreToolUse', 'Bash', { command: 'git push --force origin main' })], // answered with a deny on 3.9.102 (no key) and 3.9.103 (seatbelt)
   post: ['claude-hook', event('PostToolUse', 'Read', { file_path: '/etc/hostname' }, { tool_response: { ok: true } })],
 };
 const launcher = path.join(plugin, 'scripts', 'marrow-launch.cjs');
