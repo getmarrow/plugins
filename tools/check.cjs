@@ -59,10 +59,14 @@ const OWN_TOOLS = ['marrow_agent_runtime', 'marrow_agent_status', 'marrow_arbitr
   'marrow_decision_trace', 'marrow_evaluate_completion_contract', 'marrow_fleet_lessons',
   'marrow_governance_timeline', 'marrow_model_usage', 'marrow_replay_compare', 'marrow_think',
   'marrow_value_report', 'marrow_workflow_gate'];
-// Every tool call that contains one of the installer's tool words or prefixes, except exactly those
-// 17 whole names. Tested by Claude Code with RegExp.prototype.test (unanchored), so ^ pins the
-// exemption to the whole name and [\s\S]* keeps "anywhere in the name" for the rest.
-const PLUGIN_MATCHER = `^(?!mcp__plugin_marrow_marrow__(?:${OWN_TOOLS.join('|')})$)[\\s\\S]*`
+// Read-only Claude Code tools no released matcher hooked (the installer's CLAUDE_UNHOOKED_READ_ONLY_TOOLS).
+const UNHOOKED_READ_ONLY = ['LS', 'ListMcpResourcesTool'];
+// Every tool call except exactly those 17 whole names and the read-only names above: built-ins outside any
+// fixed list (Monitor and PowerShell run shell commands) and future tools reach the hook. Tested by Claude
+// Code with RegExp.prototype.test (unanchored), so ^ and $ pin the exemption to the whole name.
+const PLUGIN_MATCHER = `^(?!(?:mcp__plugin_marrow_marrow__(?:${OWN_TOOLS.join('|')})|${UNHOOKED_READ_ONLY.join('|')})$)[\\s\\S]*`;
+// The matcher this plugin shipped at 9b56d909 (a fixed list of tool words): the new one never skips a name it gated.
+const PLUGIN_LIST_MATCHER = `^(?!mcp__plugin_marrow_marrow__(?:${OWN_TOOLS.join('|')})$)[\\s\\S]*`
   + '(?:Bash|Edit|Write|MultiEdit|Read|Glob|Grep|Search|WebSearch|Task|functions\\.|mcp__)';
 
 check('marketplace and manifest name the plugin "marrow" with a pinned version', () => {
@@ -343,6 +347,14 @@ const TOOLS = [
   ...OWN.map((t) => [t, false]),
   ['Bash', true], ['Edit', true], ['Write', true], ['MultiEdit', true], ['NotebookEdit', true], ['Read', true],
   ['Glob', true], ['Grep', true], ['WebSearch', true], ['Task', true],
+  // Built-ins outside the old fixed list, and unknown or future names: all sent to the hook.
+  ['Monitor', true], ['PowerShell', true], ['WebFetch', true], ['Agent', true], ['Skill', true], ['SendMessage', true],
+  ['EnterWorktree', true], ['ExitWorktree', true], ['KillShell', true], ['SlashCommand', true], ['CronCreate', true],
+  ['ScheduleWakeup', true], ['AskUserQuestion', true], ['ExitPlanMode', true], ['FutureTool', true], ['', true],
+  ['monitor', true], ['MONITOR', true], ['Monitor\n', true], [' LS', true], ['LS\0', true], ['LS ', true], ['LSX', true],
+  ['ListMcpResourcesToolX', true], ['ls', true],
+  // The two read-only names no released matcher hooked stay unhooked, by exact name only.
+  ['LS', false], ['ListMcpResourcesTool', false],
   ['mcp__github__create_pull_request', true], ['mcp__plugin_other_db__query', true],
   // Marrow-looking names outside the 17 exact plugin names are all sent to the hook.
   ['mcp__marrow__marrow_agent_runtime', true], ['mcp__marrow__marrow_delete_all', true],
@@ -362,9 +374,28 @@ const TOOLS = [
   ['xmcp__plugin_marrow_marrow__marrow_commit', true], [' mcp__plugin_marrow_marrow__marrow_commit', true],
   ['mcp__plugin_marrow_marrow__marrow_commit\nBash', true], ['\nmcp__plugin_marrow_marrow__marrow_commit', true],
 ];
-check('matcher collision table: only the 17 exact plugin tool names are skipped', () => {
+check('matcher collision table: only the 17 exact plugin tool names and the two read-only names are skipped', () => {
   const re = new RegExp(PLUGIN_MATCHER);
   for (const [tool, gated] of TOOLS) assert.strictEqual(re.test(tool), gated, JSON.stringify(tool));
+  // A full-match host decides the same way.
+  const full = new RegExp(`^(?:${PLUGIN_MATCHER})$`);
+  for (const [tool, gated] of TOOLS) assert.strictEqual(full.test(tool), gated, `full match ${JSON.stringify(tool)}`);
+});
+check('matcher never skips a name the 9b56d909 list matcher gated, and gates every other name', () => {
+  const now = new RegExp(PLUGIN_MATCHER);
+  const before = new RegExp(PLUGIN_LIST_MATCHER);
+  const exempt = new Set([...OWN, ...UNHOOKED_READ_ONLY]);
+  const words = ['Bash', 'Monitor', 'PowerShell', 'WebFetch', 'Agent', 'Task', 'LS', 'ListMcpResourcesTool', 'Read', 'mcp__x__y',
+    'functions.x', ...OWN, 'mcp__marrow__marrow_think', 'Skill', 'FutureTool', ''];
+  const pads = ['', ' ', '\n', '\0', 'X', 'x', ' '];
+  let n = 0;
+  for (const w of words) for (const a of pads) for (const b of pads) {
+    const label = a + w + b;
+    n += 1;
+    if (before.test(label)) assert.ok(now.test(label), `${JSON.stringify(label)} was gated and is now skipped`);
+    assert.strictEqual(now.test(label), !exempt.has(label), JSON.stringify(label));
+  }
+  process.stdout.write(`  ${n} labels: every gated name stays gated; only the 19 exact exempt names are skipped\n`);
 });
 // The installer's matcher, plus the matcher of every built marrow-mcp release passed after cli.ts.
 const RELEASE_MATCHERS = [['installer 0.1.69 / mcp 3.9.101', MASTER_MATCHER],
