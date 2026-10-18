@@ -6,7 +6,7 @@ Marrow's approval hooks, the Marrow MCP server and a short skill for Cursor. The
 - MCP server (`mcp.json`): server `marrow`, started by `scripts/marrow-launch.cjs mcp`. Every hook command is `node "${CURSOR_PLUGIN_ROOT}/scripts/marrow-launch.cjs" <entrypoint>`, never a path relative to the project.
 - Skill (`skills/marrow`).
 
-Needs Node.js 18 or later on `PATH`. The first hook call installs the pinned package once into `~/.marrow/cursor-plugin` (`npm ci --ignore-scripts` from `package-lock.json`, outside your project) and checks every file against `scripts/mcp-manifest.json`; only a verified copy ever runs. If none can load, Marrow's pre-action hooks hold the call.
+Needs Node.js 18 or later on `PATH`. The first start of the plugin's Marrow server (or the first prompt's context hook) installs the pinned package once into `~/.marrow/cursor-plugin` (`npm ci --ignore-scripts` from `package-lock.json`, outside your project) and checks every file against `scripts/mcp-manifest.json`; only a verified copy ever runs. If none can load, Marrow's pre-action hooks hold the call at once; they never install or wait for an install themselves.
 
 To connect a key, in your own terminal:
 

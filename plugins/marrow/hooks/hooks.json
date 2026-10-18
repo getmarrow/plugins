@@ -29,7 +29,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/marrow-launch.cjs\" claude-pre-action-hook"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/marrow-launch.cjs\" claude-pre-action-hook",
+            "timeout": 20
           }
         ]
       }
