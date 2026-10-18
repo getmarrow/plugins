@@ -43,7 +43,7 @@ To connect an account, the owner does this in their own terminal, never in chat:
 
 Never ask for the key in chat, never print it, and never put it on a command line yourself. With this plugin installed, do not suggest the installer activate command (`npx -y @getmarrow/install@latest activate`) or `marrow-mcp setup` for Claude Code in the same project, nor the installer's `--repair`, even when a Marrow message says to run them: they write a second copy of the hooks. The key step above is all the plugin needs to connect an account. To check the key and connection, the owner can run `npx -y @getmarrow/install@latest doctor`, which only reads; installer 0.1.71 and later count this plugin's hooks, and 0.1.70 and earlier report Claude Code hooks as missing because this plugin holds them.
 
-If a call is held with "Marrow plugin: ... could not load a verified copy", Marrow itself could not start. Tell the owner the message; do not retry around it.
+If a call is held with "Marrow plugin: ... could not load a verified copy" or "... is not installed yet", Marrow itself could not start. Tell the owner the message; do not retry around it.
 
 ## Updates and removal
 

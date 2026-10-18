@@ -122,7 +122,10 @@ check('pins equal the @getmarrow/install release pins (src/pins.js)', () => {
 
 const EXPECTED = {
   UserPromptSubmit: { matcher: undefined, entry: 'claude-context-hook' },
-  PreToolUse: { matcher: PLUGIN_MATCHER, entry: 'claude-pre-action-hook' },
+  // The one field the plugin adds to the installer's shape: an explicit host timeout (PKG-L2). The pinned
+  // pre-action hook allows itself 14 s for Claude Code (marrow-mcp src/host-approval.ts preToolBudgetMs), so the host
+  // gives up only after the hook has decided.
+  PreToolUse: { matcher: PLUGIN_MATCHER, entry: 'claude-pre-action-hook', timeout: 20 },
   PostToolUse: { matcher: PLUGIN_MATCHER, entry: 'claude-hook' },
   PostToolUseFailure: { matcher: PLUGIN_MATCHER, entry: 'claude-hook' },
   Stop: { matcher: undefined, entry: 'claude-session-hook' },
@@ -143,6 +146,7 @@ check('hooks are exactly the installer\'s Claude Code events, entrypoints and fi
     // exec-form args can never start the launcher without an entrypoint.
     const expected = { type: 'command', command: `node "${LAUNCH}" ${want.entry}` };
     if (want.async) expected.async = true;
+    if (want.timeout) expected.timeout = want.timeout;
     assert.deepStrictEqual(handler, expected, event);
   }
   const start = hooks.hooks.SessionStart;

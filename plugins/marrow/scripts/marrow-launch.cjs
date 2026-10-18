@@ -13,8 +13,12 @@
 //      (Cursor, which has no plugin data folder), installed once with `npm ci` from the same lockfile
 //      (install scripts off, outside the project directory) and checked against the manifest.
 // Nothing resolves a version at run time and nothing runs from the project's node_modules.
-// When no verified copy can be loaded, the pre-action hook holds the tool call (fail closed) and
-// the other entrypoints exit with a non-blocking error.
+// Only the MCP server (`mcp`), the context hook (UserPromptSubmit) and `prepare` install that private
+// copy. Every tool hook, PreToolUse above all, only looks for an already verified copy: an install
+// (`npm ci`, up to 120 s, or a wait on another start's lock, up to 150 s) inside a hook that the host
+// stops after its timeout would let the tool call run. When no verified copy can be loaded, the
+// pre-action hook holds the tool call at once (fail closed) and the other entrypoints exit with a
+// non-blocking error.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -27,14 +31,20 @@ const CURSOR = fs.existsSync(path.join(ROOT, '.cursor-plugin', 'plugin.json'));
 const CLAUDE = fs.existsSync(path.join(ROOT, '.claude-plugin', 'plugin.json'));
 const PRE_ACTION = CURSOR ? 'cursor-pre-action-hook' : 'claude-pre-action-hook';
 const MCP_MODE = 'mcp';
+const PREPARE = 'prepare';
+const CONTEXT_HOOK = CURSOR ? 'cursor-context-hook' : 'claude-context-hook';
+// The entrypoints that may install the private copy. Never a tool hook.
+const INSTALLERS = new Set([MCP_MODE, PREPARE, CONTEXT_HOOK]);
 const ENTRYPOINTS = new Set(CURSOR === CLAUDE ? [] : CURSOR ? [
   MCP_MODE,
+  PREPARE,
   'cursor-context-hook',
   'cursor-pre-action-hook',
   'cursor-hook',
   'cursor-session-hook',
 ] : [
   MCP_MODE,
+  PREPARE,
   'claude-context-hook',
   'claude-pre-action-hook',
   'claude-hook',
@@ -208,14 +218,15 @@ function installCopy(data, id, manifest) {
 // One-time install into ${CLAUDE_PLUGIN_DATA}; concurrent starts wait on a lock directory. Claude Code
 // deletes this directory when the plugin is uninstalled. Cursor gives plugins no data folder, so the
 // Cursor plugin keeps its copy in ~/.marrow/cursor-plugin (removed by hand after an uninstall).
-function dataCopy(manifest) {
+// Without `install`, only an already verified copy is used: nothing is created, installed or waited for.
+function dataCopy(manifest, install) {
   const data = CURSOR ? path.join(os.homedir(), '.marrow', 'cursor-plugin') : process.env.CLAUDE_PLUGIN_DATA;
   if (!data || !path.isAbsolute(data)) return null;
   const id = `mcp-${manifest.mcp.version}-${manifest.sha256.slice(0, 16)}`;
   const dir = path.join(data, id);
   const check = () => (privateDir(dir) ? verifiedEntry(manifest, path.join(dir, 'node_modules')) : null);
   let entry = check();
-  if (entry) return entry;
+  if (entry || !install) return entry;
   try {
     fs.mkdirSync(data, { recursive: true, mode: 0o700 });
     const stat = fs.lstatSync(data);
@@ -271,8 +282,15 @@ function main() {
   }
   const manifest = loadManifest();
   if (!manifest) return fail('its pinned @getmarrow/mcp manifest is missing or does not match package.json.');
-  const entry = verifiedEntry(manifest, path.join(ROOT, 'node_modules')) || dataCopy(manifest);
-  if (!entry) return fail('could not load a verified copy of the pinned @getmarrow/mcp.');
+  const install = INSTALLERS.has(args[0]);
+  const entry = verifiedEntry(manifest, path.join(ROOT, 'node_modules')) || dataCopy(manifest, install);
+  if (!entry) {
+    return fail(install
+      ? 'could not load a verified copy of the pinned @getmarrow/mcp.'
+      : 'the pinned @getmarrow/mcp is not installed yet (the plugin installs it when its Marrow server starts or on your first prompt).');
+  }
+  // `prepare` only makes sure the verified copy exists.
+  if (args[0] === PREPARE) return;
   process.argv = [process.argv[0], entry, ...(args[0] === MCP_MODE ? [] : args)];
   require(entry);
 }

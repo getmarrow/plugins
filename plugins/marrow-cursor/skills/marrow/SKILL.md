@@ -43,7 +43,7 @@ To connect an account, the owner does this in their own terminal, never in chat:
 
 Never ask for the key in chat, never print it, and never put it on a command line yourself. With this plugin installed, do not suggest the installer activate command (`npx -y @getmarrow/install@latest activate`) or `marrow-mcp setup` for Cursor in the same project, nor the installer's `--repair`, even when a Marrow message says to run them: they write a second copy of the hooks into `.cursor/hooks.json`. The key step above is all the plugin needs to connect an account. To check the key and connection, the owner can run `npx -y @getmarrow/install@latest doctor`, which only reads; it does not count this plugin, so it can report Cursor hooks as missing while the plugin holds them.
 
-If a call is held with "Marrow plugin: ... could not load a verified copy", Marrow itself could not start (the first hook call installs the pinned package once and needs the network). Tell the owner the message; do not retry around it.
+If a call is held with "Marrow plugin: ... could not load a verified copy" or "... is not installed yet", Marrow itself could not start (the plugin installs the pinned package once, when its Marrow server first starts or on the first prompt, and needs the network; a hold just after a fresh install usually clears within seconds). Tell the owner the message; do not retry around it.
 
 ## Updates and removal
 
