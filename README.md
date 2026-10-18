@@ -10,7 +10,7 @@ The `getmarrow` marketplace for Claude Code, Cursor and Codex. Each host's `marr
 
 Each plugin governs its own host only. The Claude Code plugin does not govern Cursor, even where Cursor imports Claude Code plugins: Cursor users will install the Cursor plugin once it can be installed (see "Install in Cursor" below).
 
-The Claude Code and Cursor plugins run `@getmarrow/mcp` 3.9.103, which includes the free keyless seatbelt: with no account and no key, their hooks stop seven kinds of action (see "Without a key: the keyless seatbelt" below). With an account, Marrow holds risky actions for approval and keeps the audit trail. The Codex plugins pin `@getmarrow/mcp` 3.9.102 and do not include the keyless seatbelt; it comes to them with the next update.
+The Claude Code and Cursor plugins run `@getmarrow/mcp` 3.9.104, which includes the free keyless seatbelt: with no account and no key, their hooks stop seven kinds of action (see "Without a key: the keyless seatbelt" below). With an account, Marrow holds risky actions for approval and keeps the audit trail. The Codex plugins pin `@getmarrow/mcp` 3.9.102 and do not include the keyless seatbelt; it comes to them with the next update.
 
 **Windows:** Marrow's hooks do not work on native Windows yet: every action is blocked. Use WSL, or wait for the fix.
 
@@ -40,10 +40,10 @@ Not available yet: Cursor cannot install this plugin today, from its marketplace
 Only the MCP server, without hooks, is a one-click link (a page renders it as a link or an "Add to Cursor" button):
 
 ```text
-cursor://anysphere.cursor-deeplink/mcp/install?name=marrow&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIi0tcGFja2FnZT1AZ2V0bWFycm93L21jcEAzLjkuMTAzIiwibWFycm93LW1jcCJdfQ==
+cursor://anysphere.cursor-deeplink/mcp/install?name=marrow&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIi0tcGFja2FnZT1AZ2V0bWFycm93L21jcEAzLjkuMTA0IiwibWFycm93LW1jcCJdfQ==
 ```
 
-The `config` value is base64 of `{"command":"npx","args":["-y","--package=@getmarrow/mcp@3.9.103","marrow-mcp"]}`, pinned, with no key and no `env`. The MCP server alone is advisory: approvals are enforced only by the plugin's hooks. Unlike the plugin, the link starts the server through `npx`, which can pick up a copy of `@getmarrow/mcp` that a project's `node_modules` claims at the same version. Prefer the plugin.
+The `config` value is base64 of `{"command":"npx","args":["-y","--package=@getmarrow/mcp@3.9.104","marrow-mcp"]}`, pinned, with no key and no `env`. The MCP server alone is advisory: approvals are enforced only by the plugin's hooks. Unlike the plugin, the link starts the server through `npx`, which can pick up a copy of `@getmarrow/mcp` that a project's `node_modules` claims at the same version. Prefer the plugin.
 
 ## What each plugin adds
 
@@ -53,7 +53,7 @@ The `config` value is base64 of `{"command":"npx","args":["-y","--package=@getma
 | MCP server | `.mcp.json`: server `marrow`. Its tools are on demand. | `mcp.json`: server `marrow`. Its tools are on demand. |
 | Skill | `skills/marrow`: when to call Marrow, holds and approvals, the key step, update commands. | `skills/marrow`: the same rules for Cursor. |
 
-Both run the pinned `@getmarrow/mcp` 3.9.103 entrypoints, the same ones the installer writes, through the same launcher. The plugins add no policy of their own.
+Both run the pinned `@getmarrow/mcp` 3.9.104 entrypoints, the same ones the installer writes, through the same launcher. The plugins add no policy of their own.
 
 Hooks are cooperative, client-reported control. They act only while the plugin is enabled and the host runs them. A configured hook never proves coverage or enforcement on its own.
 
@@ -88,7 +88,7 @@ The plugins carry the hooks, so the hold message's "run the installer activate c
 
 ## Pinned versions and updates
 
-- `package.json` and `package-lock.json` (the same files in both the Claude Code and the Cursor plugin) pin `@getmarrow/mcp` 3.9.103 and `@getmarrow/sdk` 3.7.65 with sha512 integrity, equal to `@getmarrow/install` 0.1.71's `src/pins.js`. The Codex plugins pin `@getmarrow/mcp` 3.9.102 and `@getmarrow/sdk` 3.7.65, equal to `@getmarrow/install` 0.1.70's `src/pins.js`.
+- `package.json` and `package-lock.json` (the same files in both the Claude Code and the Cursor plugin) pin `@getmarrow/mcp` 3.9.104 and `@getmarrow/sdk` 3.7.67 with sha512 integrity, equal to `@getmarrow/install` 0.1.73's `src/pins.js`. The Codex plugins pin `@getmarrow/mcp` 3.9.102 and `@getmarrow/sdk` 3.7.65, equal to `@getmarrow/install` 0.1.70's `src/pins.js`.
 - Hooks start the package with `node`, not `npx`. Each start checks every file against `scripts/mcp-manifest.json`. Claude Code installs the lockfile into the plugin's cached copy with install scripts disabled. If that copy is missing or changed, or on Cursor, which installs no plugin dependencies, the launcher installs the same lockfile once (`npm ci --ignore-scripts`, outside your project) and checks that copy the same way. Only the plugin's Marrow server (`mcp`), the context hook (your first prompt) and `prepare` install; no tool hook does. Claude Code keeps it in the plugin's data folder (`~/.claude/plugins/data/`, removed on uninstall), Cursor in `~/.marrow/cursor-plugin` (mode 700), Codex in `~/.codex/plugins/data/marrow-getmarrow/`. Nothing is fetched by version at run time and nothing runs from your project's `node_modules`.
 - If no verified copy can be loaded (for example, offline on first use), the pre-action hook holds tool calls with a "Marrow plugin:" message until one can, and the other hooks report a non-blocking error. The pre-action hook never installs and never waits for another start's install: with no verified copy it answers at once (under a second), so the host's hook timeout (20 s on the Claude Code `PreToolUse` entry, above the 14 s the pinned hook allows itself) is never the thing that decides. On a fresh install the first tool call can be held for the second or so that the Marrow server's first start (or the first prompt) needs to install the copy; measured here, a cold start took about 1.3 s to a verified copy.
 - Each plugin sets `version`, so the host keeps you on the installed copy until a new version is published and you update. Third-party Claude Code marketplaces do not auto-update unless you turn that on.
@@ -152,7 +152,7 @@ rm -rf ~/.codex/plugins/data/marrow-getmarrow
 `npx @getmarrow/install` writes Codex hooks too, and what they do depends on its version:
 
 - **0.1.70 and earlier.** Their tool-hook matcher uses a lookahead that Codex rejects (`invalid matcher`), so their `PreToolUse` and `PostToolUse` hooks never load and no Codex tool call is checked. Only their context and session hooks run. For protection in Codex, use this plugin.
-- **0.1.71 and later.** The installer writes the matcher `*`, so its Codex hooks send every tool call to Marrow's check, Marrow's own tools included. The check itself is `@getmarrow/mcp`: from 3.9.103 it skips Marrow's own tools only when the host's own configuration proves that the `marrow` server is the official Marrow MCP server (the `npx -y @getmarrow/mcp` entry with no project or environment npm setting that could change where npx fetches it, the installed `marrow-mcp`, the installer's verified runtime, or this plugin, verified file by file and installed alone, with no other server that could give the same label). A look-alike server or plugin, or one Marrow cannot prove, is checked like any other tool. Installer 0.1.71 pins 3.9.103.
+- **0.1.71 and later.** The installer writes the matcher `*`, so its Codex hooks send every tool call to Marrow's check, Marrow's own tools included. The check itself is `@getmarrow/mcp`: from 3.9.103 it skips Marrow's own tools only when the host's own configuration proves that the `marrow` server is the official Marrow MCP server (the `npx -y @getmarrow/mcp` entry with no project or environment npm setting that could change where npx fetches it, the installed `marrow-mcp`, the installer's verified runtime, or this plugin, verified file by file and installed alone, with no other server that could give the same label). A look-alike server or plugin, or one Marrow cannot prove, is checked like any other tool. Installers 0.1.71 and 0.1.72 pin 3.9.103; 0.1.73 pins 3.9.104.
 - **This plugin's own hooks** run the `@getmarrow/mcp` 3.9.102 it pins. They get every tool call (`*`), and 3.9.102 skips by label alone (see the table above). They do not include the keyless seatbelt; it comes to them with the next update. A plugin release cannot pin an MCP that already carries that release's pins, so a Codex plugin pins an MCP older than the one that carries its pins ([docs/PLUGIN-RELEASE.md](docs/PLUGIN-RELEASE.md)).
 
 Use the plugin or the installer for Codex, not both. If the installer's `.codex/hooks.json` is also there, its context and session hooks run twice next to the plugin's, and from installer 0.1.71 its tool hooks run next to the plugin's as well, so every tool call is checked by two separate hooks; keep one copy. Hooks are cooperative, client-reported control.

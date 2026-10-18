@@ -9,7 +9,7 @@
     {
       "name": "marrow",
       "source": "./plugins/marrow",
-      "description": "Marrow's approval hooks, MCP server and skill, pinned to @getmarrow/mcp 3.9.103, with the free keyless seatbelt. No account or key is needed to install.",
+      "description": "Marrow's approval hooks, MCP server and skill, pinned to @getmarrow/mcp 3.9.104, with the free keyless seatbelt. No account or key is needed to install.",
       "category": "security",
       "tags": ["governance", "approvals", "hooks", "mcp"]
     }

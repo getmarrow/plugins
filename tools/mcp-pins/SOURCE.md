@@ -1,7 +1,7 @@
 # Vendored MCP pins check
 
 These two files are byte-identical to getmarrow/marrow-mcp commit
-`868a9c18530a75fcee5052441d0d3d2383511df4`, the `@getmarrow/mcp` 3.9.103 release commit:
+`6307ef1946ab84b86c6075407475dc96413ac386`, the `@getmarrow/mcp` 3.9.104 release candidate commit:
 
 | Here | There |
 | --- | --- |

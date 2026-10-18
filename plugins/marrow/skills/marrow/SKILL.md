@@ -7,7 +7,7 @@ description: Marrow approval and proof rules for this Claude Code session. Use b
 
 Marrow is the approval and proof layer for agent actions. The marrow plugin adds:
 
-- Hooks before and after tool calls. They run the pinned `@getmarrow/mcp` 3.9.103 entrypoints, the same ones `npx @getmarrow/install` writes. Hooks are cooperative, client-reported control: they act only while this plugin is enabled and Claude Code runs them, and a configured hook never proves coverage on its own.
+- Hooks before and after tool calls. They run the pinned `@getmarrow/mcp` 3.9.104 entrypoints, the same ones `npx @getmarrow/install` writes. Hooks are cooperative, client-reported control: they act only while this plugin is enabled and Claude Code runs them, and a configured hook never proves coverage on its own.
 - The Marrow MCP server. Its `marrow_*` tools are on demand: they do nothing until called.
 
 ## Rules
@@ -20,7 +20,7 @@ Marrow is the approval and proof layer for agent actions. The marrow plugin adds
 
 ## No key yet
 
-Installing the plugin needs no account and no key. The hooks run `@getmarrow/mcp` 3.9.103, which includes the free keyless seatbelt: when there is no usable key and the machine shows no sign of a Marrow account, they stop seven kinds of action with the host's own deny and make no network call. The seven are changes to Marrow's own hooks, settings or plugins (and owner-only Marrow commands), force-push or delete of a protected branch, a production deploy, a package publish, reading credentials or secrets (a project `.env` file other than a template included), a recursive delete outside the workspace, and decoded data run by a shell or interpreter. Everything else gets no Marrow decision, so Claude Code's own approval step decides. It is a seatbelt, not a vault: a determined agent can get around a local check. With an account, Marrow holds risky actions for approval and keeps the audit trail.
+Installing the plugin needs no account and no key. The hooks run `@getmarrow/mcp` 3.9.104, which includes the free keyless seatbelt: when there is no usable key and the machine shows no sign of a Marrow account, they stop seven kinds of action with the host's own deny and make no network call. The seven are changes to Marrow's own hooks, settings or plugins (and owner-only Marrow commands), force-push or delete of a protected branch, a production deploy, a package publish, reading credentials or secrets (a project `.env` file other than a template included), a recursive delete outside the workspace, and decoded data run by a shell or interpreter. Everything else gets no Marrow decision, so Claude Code's own approval step decides. It is a seatbelt, not a vault: a determined agent can get around a local check. With an account, Marrow holds risky actions for approval and keeps the audit trail.
 
 When a seatbelt stop appears, tell the person what was stopped; it needs the machine owner. Do not retry it another way, and do not change Marrow's hooks, settings or plugins to get past it. Until a key exists:
 

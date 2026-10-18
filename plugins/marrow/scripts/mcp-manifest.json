@@ -1,12 +1,12 @@
 {
   "schema": "marrow-plugin-mcp-manifest.v1",
   "mcp": {
-    "version": "3.9.103",
-    "integrity": "sha512-STXL6Zaiqv8Jh0wQpQpNut3bvj5ck0wNokwhy21Y7XuqNK55+MMgCkpYhFzIuVCiuGL2FR7NlytA3EmFlHdS6w=="
+    "version": "3.9.104",
+    "integrity": "sha512-8JstteEZQP+6ymgbFiirm8/wvFNO3CcrgmU7njnEGp3lfzSueToxPscSZcrP78aKSWQbMAgF2I/AHidhj7uvTQ=="
   },
   "sdk": {
-    "version": "3.7.65",
-    "integrity": "sha512-U+rxqEBs7uIHaGbx+ADGl09RvXSMeqxQZXTuJHxwx6P8EhOEB6SSLcot0OAhAu3gfGuZ+020ch0Y0WieqjxtYw=="
+    "version": "3.7.67",
+    "integrity": "sha512-M6Yzt5plpIVPiX+SZjgIGBC9/s4WuCr105uRf8EhRbF0+i/HpRDZSlbDevXymdu7arAIoZWBcfHTeQy/TlhwTQ=="
   },
   "bin": "@getmarrow/mcp/dist/cli.js",
   "files": [
@@ -180,6 +180,10 @@
     "@getmarrow/mcp/dist/seatbelt-scripts.d.ts.map",
     "@getmarrow/mcp/dist/seatbelt-scripts.js",
     "@getmarrow/mcp/dist/seatbelt-scripts.js.map",
+    "@getmarrow/mcp/dist/secret-paths.d.ts",
+    "@getmarrow/mcp/dist/secret-paths.d.ts.map",
+    "@getmarrow/mcp/dist/secret-paths.js",
+    "@getmarrow/mcp/dist/secret-paths.js.map",
     "@getmarrow/mcp/dist/session-loop-guard.d.ts",
     "@getmarrow/mcp/dist/session-loop-guard.d.ts.map",
     "@getmarrow/mcp/dist/session-loop-guard.js",
@@ -254,9 +258,9 @@
     "@getmarrow/sdk/dist/types.js.map",
     "@getmarrow/sdk/package.json"
   ],
-  "sha256": "d7ff34a8320581614fe48908f59eb1a781b6eaedd13dc22a561de0436eb59485",
+  "sha256": "5c1c0787e212ec12598bc41c5a25fef8e004ea96a4f3ffdf5c27ae7fbf77e016",
   "source": {
     "repository": "getmarrow/marrow-mcp",
-    "commit": "868a9c18530a75fcee5052441d0d3d2383511df4"
+    "commit": "6307ef1946ab84b86c6075407475dc96413ac386"
   }
 }
