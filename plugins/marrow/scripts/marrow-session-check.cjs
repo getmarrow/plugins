@@ -5,6 +5,8 @@
 // marrow is enabled. Both copies would run, doubling Marrow's checks and records.
 // It reads those files in-process, prints only fixed labels for which places matched, and never
 // changes anything.
+// When nothing is duplicated it also says, in one fixed line, that the keyless seatbelt is on, but
+// only while no Marrow key can be set (see noKeyIsSet).
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -26,6 +28,44 @@ function hasMarrowHook(settings) {
       .concat(Array.isArray(hook.args) ? hook.args : [])
       .some((part) => typeof part === 'string' && /\bmarrow-mcp\b|@getmarrow\/mcp\b/.test(part)))
   )));
+}
+
+// The one line shown while no key is set. Fixed text: nothing from the environment or the files below
+// is ever put in it.
+const KEYLESS_NOTICE = 'Marrow seatbelt is on (no key yet): it stops a short list of actions, like force-push to main, production deploys, package publishes and secret files. For approval prompts instead, add a key: getmarrow.ai/docs#start-here';
+
+// True only when the file is certainly not there. Any other answer (permission denied, not a directory,
+// I/O error) is doubt, and doubt means a key may be set.
+function certainlyAbsent(file) {
+  try {
+    fs.lstatSync(file);
+    return false;
+  } catch (error) {
+    return Boolean(error) && error.code === 'ENOENT';
+  }
+}
+
+// True only when no Marrow key can be set. The sources are the ones the key resolver of @getmarrow/mcp
+// reads (src/env.ts): MARROW_API_KEY, MARROW_KEY, then ~/.marrow/env.local and ~/.marrow/env, from the
+// same home (HOME, then USERPROFILE, then os.homedir()). The plugin declares no options, so any
+// CLAUDE_PLUGIN_OPTION_* variable is unexpected and counts as doubt. The owner files hold secrets: they are
+// checked with lstat alone, never opened, read, hashed or printed, so a FIFO or a mode 000 file cannot
+// block or fail this. A folder that is not a plain directory, or any other answer, is doubt.
+function noKeyIsSet() {
+  try {
+    const env = process.env;
+    if (env.MARROW_API_KEY || env.MARROW_KEY) return false;
+    if (Object.keys(env).some((name) => name.startsWith('CLAUDE_PLUGIN_OPTION_'))) return false;
+    const ownerHome = env.HOME || env.USERPROFILE || os.homedir();
+    if (typeof ownerHome !== 'string' || !path.isAbsolute(ownerHome)) return false;
+    fs.lstatSync(ownerHome);
+    const marrowDir = path.join(ownerHome, '.marrow');
+    if (certainlyAbsent(marrowDir)) return true;
+    if (!fs.lstatSync(marrowDir).isDirectory()) return false;
+    return certainlyAbsent(path.join(marrowDir, 'env.local')) && certainlyAbsent(path.join(marrowDir, 'env'));
+  } catch {
+    return false;
+  }
 }
 
 const home = os.homedir();
@@ -81,4 +121,6 @@ if (found.length > 0) {
       additionalContext: `Marrow is configured twice in this session (the marrow plugin and ${where}). Tell the user once. Do not edit settings, hooks or plugin files yourself; the user chooses which copy to keep.`,
     },
   }));
+} else if (noKeyIsSet()) {
+  process.stdout.write(JSON.stringify({ systemMessage: KEYLESS_NOTICE }));
 }
