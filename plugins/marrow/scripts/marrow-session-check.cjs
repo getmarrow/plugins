@@ -32,7 +32,7 @@ function hasMarrowHook(settings) {
 
 // The one line shown while no key is set. Fixed text: nothing from the environment or the files below
 // is ever put in it.
-const KEYLESS_NOTICE = 'Marrow seatbelt is on (no key yet): it stops a short list of actions, like force-push to main, production deploys, package publishes and secret files. For approval prompts instead, add a key: getmarrow.ai/docs#start-here';
+const KEYLESS_NOTICE = 'Marrow seatbelt is on (no key yet): it stops actions like force-push to main, production deploys, package publishes and secret files. For approval prompts instead, add a key: getmarrow.ai/docs#start-here';
 
 // True only when the file is certainly not there. Any other answer (permission denied, not a directory,
 // I/O error) is doubt, and doubt means a key may be set.

@@ -18,7 +18,7 @@ const SCRIPT_REL = 'plugins/marrow/scripts/marrow-session-check.cjs';
 const script = path.join(repo, ...SCRIPT_REL.split('/'));
 const BASE_SHA = 'f2fa1ab14792ea2154e81f0bd4ab275c4139fc03';
 // The approved copy (COPY-approved P1), repeated here so a change to the script's text fails this test.
-const P1 = 'Marrow seatbelt is on (no key yet): it stops a short list of actions, like force-push to main, production deploys, package publishes and secret files. For approval prompts instead, add a key: getmarrow.ai/docs#start-here';
+const P1 = 'Marrow seatbelt is on (no key yet): it stops actions like force-push to main, production deploys, package publishes and secret files. For approval prompts instead, add a key: getmarrow.ai/docs#start-here';
 const NOTICE = JSON.stringify({ systemMessage: P1 });
 const showCells = process.argv.includes('--cells');
 const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
