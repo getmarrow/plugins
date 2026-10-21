@@ -1,6 +1,6 @@
 # Marrow plugins for Claude Code, Codex and Cursor
 
-The `getmarrow` marketplace for Claude Code, Cursor and Codex. Each host's `marrow` plugin adds Marrow's approval hooks, the Marrow MCP server and a short skill to that host. Codex also has `marrow-advisory`, with no hooks.
+The `getmarrow` marketplace for Claude Code, Cursor and Codex. Each host's `marrow` plugin adds Marrow's approval hooks, the Marrow MCP server and a short skill to that host. Codex also has `marrow-advisory`, with no hooks. Cursor cannot install its plugin yet: see "Install in Cursor" below.
 
 | Host | Plugin folder | Marketplace file |
 | --- | --- | --- |
@@ -8,7 +8,7 @@ The `getmarrow` marketplace for Claude Code, Cursor and Codex. Each host's `marr
 | Cursor | `plugins/marrow-cursor` | `.cursor-plugin/marketplace.json` |
 | Codex | `codex/marrow` (hooks), `codex/marrow-advisory` (no hooks; install one of the two, not both) | `.agents/plugins/marketplace.json` |
 
-Each plugin governs its own host only. The Claude Code plugin does not govern Cursor, even where Cursor imports Claude Code plugins: Cursor users install the Cursor plugin.
+Each plugin governs its own host only. The Claude Code plugin does not govern Cursor, even where Cursor imports Claude Code plugins: Cursor users will install the Cursor plugin once it can be installed (see "Install in Cursor" below).
 
 The Claude Code and Cursor plugins run `@getmarrow/mcp` 3.9.103, which includes the free keyless seatbelt: with no account and no key, their hooks stop seven kinds of action (see "Without a key: the keyless seatbelt" below). With an account, Marrow holds risky actions for approval and keeps the audit trail. The Codex plugins pin `@getmarrow/mcp` 3.9.102 and do not include the keyless seatbelt; it comes to them with the next update.
 
@@ -97,7 +97,7 @@ claude plugin marketplace update getmarrow
 claude plugin update marrow@getmarrow
 ```
 
-In Cursor, update Marrow from Settings → Plugins.
+Cursor cannot install Marrow yet, so there is nothing to update there.
 
 ## Uninstall
 
@@ -106,7 +106,7 @@ claude plugin uninstall marrow@getmarrow
 claude plugin marketplace remove getmarrow
 ```
 
-In Cursor, uninstall Marrow from Settings → Plugins, then remove its package copy: `rm -rf ~/.marrow/cursor-plugin`. In Codex, see "Update and remove" below.
+Cursor cannot install Marrow yet; if you have a package copy from an earlier try, remove it with `rm -rf ~/.marrow/cursor-plugin`. In Codex, see "Update and remove" below.
 
 The hooks and the MCP server live inside the plugin, so they go with it. What is left, exactly:
 
