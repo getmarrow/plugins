@@ -35,12 +35,12 @@ Check that `claude plugin marketplace list` shows `getmarrow` coming from `getma
 
 ## Install in Cursor
 
-Works on macOS and Linux. <!-- WINDOWS-STATUS: set with the MCP 3.9.106 pin commit -->
+Install from the plugin source or a local folder. <!-- LIVE-PROOF: replace this sentence with "Works on macOS and Linux." once live rows L1-L8 have passed --> <!-- WINDOWS-STATUS: set with the MCP 3.9.106 pin commit -->
 It needs Node.js 18 or later with npm on `PATH`. No account or key is needed to install.
 
 <!-- CURSOR-MARKETPLACE: listing pending Cursor review; Cliff adds the marketplace sentence once listed -->
 
-1. In Cursor, add `https://github.com/getmarrow/plugins` as a plugin source, then install `marrow` and restart Cursor. Cursor reads this repository's `main` branch, a read-only branch that mirrors `master`.
+1. In Cursor, add `https://github.com/getmarrow/plugins` as a plugin source, then install `marrow` and restart Cursor. <!-- MAIN-MIRROR: add "Cursor reads this repository's `main` branch, a read-only branch that mirrors `master`." only once that branch exists and the owner has decided it -->
 2. Fallback, or to try a candidate: clone `getmarrow/plugins`, copy `plugins/marrow-cursor` to `~/.cursor/plugins/local/marrow`, and restart Cursor. Local plugins update only when you copy a newer folder over, and Cursor Enterprise may turn local plugins off.
 
 With no Marrow key, the Marrow MCP server shows as connected with 0 tools, and the plugin's hooks still apply: see "Without a key: the keyless seatbelt" below, which also shows how to connect an account.

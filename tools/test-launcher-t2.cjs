@@ -24,7 +24,6 @@ const DEAD_URL = 'https://127.0.0.1:9';
 const REQUIRED_LINE = 'MARROW_API_KEY environment variable is required';
 const STUB_NOTICE = 'Marrow plugin: no Marrow key on this machine, so the Marrow MCP server started with no tools.';
 const DENY_WORDS = /allow|approv|permit|grant|authori[sz]|proceed|decision|safe to/i;
-const KNOWN_VERSIONS = ['2024-11-05', '2025-06-18', '2025-11-25'];
 const POSIX = process.platform !== 'win32';
 
 function start({ host, repo, result: countRow }) {
@@ -316,10 +315,14 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
   const slowTimeout = POSIX ? slowRun('npm-timeout', () => ({
     pluginDir: plugin({ modules: false }), home: makeHome('slow-timeout'), node: noNpmNode, extra: { PATH: `${fakeBin}:/usr/bin:/bin` },
   })) : Promise.resolve(null);
+  const lockOwner = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 400000)'], { stdio: 'ignore' });
   const slowLock = slowRun('lock-timeout', () => {
     const pluginDir = plugin({ modules: false });
     const home = makeHome('slow-lock');
-    fs.mkdirSync(path.join(dataOf(home), `${manifestId(pluginDir)}.lock`), { recursive: true, mode: 0o700 });
+    // A fresh lock whose owner (a process of this test) stays alive: it is waited on until the stale age (135 s), then taken over.
+    const lockDir = path.join(dataOf(home), `${manifestId(pluginDir)}.lock`);
+    fs.mkdirSync(lockDir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(lockDir, 'owner.1'), JSON.stringify({ pid: lockOwner.pid, host: os.hostname(), token: 'slow', created: Date.now() }), { mode: 0o600 });
     return { pluginDir, home, extra: {} };
   });
 
@@ -579,8 +582,45 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
       const norm = (t) => { const c = JSON.parse(JSON.stringify(t.init)); delete c.result.protocolVersion; return JSON.stringify(c); };
       result(transcripts.every((t) => JSON.stringify(t.tools) === JSON.stringify(transcripts[0].tools) && t.tools.result.tools.length === 0), 'T2-8 forged initialize: the tools list is identical (empty) in all variants', `${transcripts.length} variants`);
       result(transcripts.every((t) => norm(t) === norm(transcripts[0])), 'T2-8 forged initialize: the initialize result is identical apart from protocolVersion (same capabilities, serverInfo and instructions)');
-      const want = (t) => (t.params && !Array.isArray(t.params) && KNOWN_VERSIONS.includes(t.params.protocolVersion) ? t.params.protocolVersion : KNOWN_VERSIONS[KNOWN_VERSIONS.length - 1]);
-      result(transcripts.every((t) => t.init.result.protocolVersion === want(t)), 'T2-8 protocolVersion: the client\'s value only when it is a known MCP version, otherwise the newest known one', transcripts.map((t) => t.init.result.protocolVersion).join(' '));
+      // F1: the stub answers protocolVersion exactly as the pinned server does (dist/cli.js:605-617), asked of the real server with a key.
+      const ci = { name: 't2', version: '0' };
+      const versionCases = [
+        ...variants.map(([label, params]) => [label, params]),
+        ['2024-11-05', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: ci }],
+        ['2024-11-05 with elicitation', { protocolVersion: '2024-11-05', capabilities: { elicitation: {} }, clientInfo: ci }],
+        ['2025-03-26', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: ci }],
+        ['2025-03-26 with elicitation', { protocolVersion: '2025-03-26', capabilities: { elicitation: {} }, clientInfo: ci }],
+        ['2025-06-18 without elicitation', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: ci }],
+        ['2025-06-18 with elicitation', { protocolVersion: '2025-06-18', capabilities: { elicitation: {} }, clientInfo: ci }],
+        ['2025-11-25 without elicitation', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: ci }],
+        ['2025-11-25 with elicitation', { protocolVersion: '2025-11-25', capabilities: { elicitation: {} }, clientInfo: ci }],
+        ['2025-11-25 elicitation null', { protocolVersion: '2025-11-25', capabilities: { elicitation: null }, clientInfo: ci }],
+        ['2025-11-25 elicitation string', { protocolVersion: '2025-11-25', capabilities: { elicitation: 'x' }, clientInfo: ci }],
+        ['2025-11-25 elicitation true', { protocolVersion: '2025-11-25', capabilities: { elicitation: true }, clientInfo: ci }],
+        ['2025-11-25 capabilities null', { protocolVersion: '2025-11-25', capabilities: null, clientInfo: ci }],
+        ['unknown version with elicitation', { protocolVersion: '2099-01-01', capabilities: { elicitation: {} }, clientInfo: ci }],
+        ['numeric version', { protocolVersion: 20251125, capabilities: { elicitation: {} }, clientInfo: ci }],
+        ['missing version', { capabilities: { elicitation: {} }, clientInfo: ci }],
+        ['missing version, no capabilities', { clientInfo: ci }],
+        ['empty version with elicitation', { protocolVersion: '', capabilities: { elicitation: {} }, clientInfo: ci }],
+        ['params null', null],
+        ['params string', '2025-11-25'],
+      ];
+      let versionsEqual = true;
+      const seenAnswers = new Set();
+      const mismatches = [];
+      for (const [label, params] of versionCases) {
+        const initLine = `${rpc(1, 'initialize', params)}\n`;
+        const stubRun = await session(plug, { home, lines: [initLine], replies: 1 });
+        const realRun = await session(plug, { home, lines: [initLine], replies: 1, extra: { MARROW_API_KEY: KEY, ...keyed } });
+        const stubAnswer = (parseLines(stubRun.stdout).messages[0] || {}).result;
+        const realAnswer = (parseLines(realRun.stdout).messages[0] || {}).result;
+        const same = Boolean(stubAnswer && realAnswer) && stubAnswer.protocolVersion === realAnswer.protocolVersion;
+        if (stubAnswer) seenAnswers.add(stubAnswer.protocolVersion);
+        if (!same) { versionsEqual = false; mismatches.push(label); }
+      }
+      result(versionsEqual, `T2-8 F1 protocolVersion: the stub answers exactly what the real pinned server answers for all ${versionCases.length} initialize inputs (2024-11-05, 2025-03-26, unknown, missing, non-string, null/odd params, with and without elicitation)`, mismatches.join('; '));
+      result(seenAnswers.size === 3 && seenAnswers.has('2024-11-05') && seenAnswers.has('2025-06-18') && seenAnswers.has('2025-11-25'), 'T2-8 F1 the inputs cover all three answers the server can give', [...seenAnswers].join(' '));
       result(transcripts.every((t) => !/FORGED|9999|cursor-admin/.test(t.raw)), 'T2-8 no client-supplied string (version, name, marker) is echoed in any reply');
     }
 
@@ -920,9 +960,10 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
       report.t211Timeout = { ms: timeout.ms, text: timeout.stderr.trim() };
     }
     {
+      lockOwner.kill('SIGKILL');
       const lockDir = path.join(dataOf(lock.home), `${manifestId(lock.pluginDir)}.lock`);
-      result(lock.status === 1 && lock.stdout === '' && /still installing the pinned @getmarrow\/mcp after 150 seconds/.test(lock.stderr) && lock.stderr.trim().split('\n').length === 1
-        && lock.ms >= 149000 && fs.existsSync(lockDir), 'T2-11 lock wait (a fresh lock held by someone else, real 150 s wait), mcp: exit 1, says another start was still installing, the foreign lock is left alone', `${Math.round(lock.ms / 1000)} s`);
+      result(lock.status === 0 && lock.ms >= 134000 && !fs.existsSync(lockDir) && fs.existsSync(path.join(dataOf(lock.home), manifestId(lock.pluginDir))),
+        'T2-11 lock wait (a fresh lock held by a live owner, real wait): the start waits until the 135 s stale age, takes the lock over before its 150 s wait ends (exit 0, not the lock failure), installs', `${Math.round(lock.ms / 1000)} s, exit ${lock.status}`);
       report.t211Lock = { ms: lock.ms, text: lock.stderr.trim() };
     }
   }
@@ -956,8 +997,8 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
     const differing = [...all].filter((f) => !fs.existsSync(path.join(baselineDir, f)) || !fs.existsSync(path.join(repo, f)) || !bytes(baselineDir, f).equals(bytes(repo, f))).sort();
     const expected = ['README.md', 'plugins/marrow-cursor/.cursor-plugin/plugin.json', 'plugins/marrow-cursor/scripts/marrow-launch.cjs', 'plugins/marrow-cursor/skills/marrow/SKILL.md',
       'plugins/marrow/.claude-plugin/plugin.json', 'plugins/marrow/scripts/marrow-launch.cjs', 'plugins/marrow/skills/marrow/SKILL.md',
-      'tools/check.cjs', 'tools/test-launcher-t2.cjs', 'tools/test-launcher.cjs'];
-    result(JSON.stringify(differing) === JSON.stringify(expected), 'T2-13 against be64842b, exactly these files differ: README, both SKILL.md, both plugin.json, both launchers, check.cjs, the two test files', differing.length === expected.length ? `${differing.length} files` : `unexpected: ${differing.filter((f) => !expected.includes(f)).join(',')} missing: ${expected.filter((f) => !differing.includes(f)).join(',')}`);
+      'tools/check.cjs', 'tools/test-launcher-lock.cjs', 'tools/test-launcher-t2.cjs', 'tools/test-launcher.cjs'];
+    result(JSON.stringify(differing) === JSON.stringify(expected), 'T2-13 against be64842b, exactly these files differ: README, both SKILL.md, both plugin.json, both launchers, check.cjs, the three test files', differing.length === expected.length ? `${differing.length} files` : `unexpected: ${differing.filter((f) => !expected.includes(f)).join(',')} missing: ${expected.filter((f) => !differing.includes(f)).join(',')}`);
     // No new Windows claim in either direction: existing Windows wording is untouched; the only new line is the placeholder marker.
     const windowsLines = (dir, file) => fs.readFileSync(path.join(dir, file), 'utf8').split('\n').filter((l) => /windows/i.test(l));
     let windowsOk = true;
@@ -989,6 +1030,7 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
         fs.mkdirSync(process.env.T2_REPORT_DIR, { recursive: true });
         fs.writeFileSync(path.join(process.env.T2_REPORT_DIR, `t2-${host}.json`), JSON.stringify(report, null, 1));
       }
+      lockOwner.kill('SIGKILL');
       forceRemove(work);
     }
   }

@@ -30,6 +30,8 @@ function result(ok, name, detail = '') {
 }
 // T2 rows (keyless MCP stub, honest Node/npm messages) live in tools/test-launcher-t2.cjs; their two slow waits start now and run beside everything else.
 const t2 = require('./test-launcher-t2.cjs').start({ host, repo, result });
+// Install-lock rows (stale lock takeover, audit F2) live in tools/test-launcher-lock.cjs and run last.
+const lockRows = require('./test-launcher-lock.cjs').start({ host, repo, result });
 
 // A preload that records every child process the launcher (or npm) starts, so a test can show that a hook
 // ran no npm at all.
@@ -286,6 +288,7 @@ function serverStart() {
 concurrent().then(async () => {
   serverStart();
   await t2.finish();
+  await lockRows.finish(); // after T2: its timing rows (a takeover within 10 s) need a quiet machine
   fs.rmSync(work, { recursive: true, force: true });
   process.stdout.write(`RESULT pass=${pass} fail=${fail}\n`);
   process.exit(fail ? 1 : 0);

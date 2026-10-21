@@ -57,7 +57,9 @@ const ENTRYPOINTS = new Set(CURSOR === CLAUDE ? [] : CURSOR ? [
 ]);
 const NPM_TIMEOUT_MS = 120000;
 const LOCK_WAIT_MS = 150000;
-const LOCK_STALE_MS = 300000;
+// One npm run (at most NPM_TIMEOUT_MS) plus its checks. Kept below LOCK_WAIT_MS so a start that waits can take over a lock
+// that was left behind (its owner was killed) before its own wait runs out.
+const LOCK_STALE_MS = NPM_TIMEOUT_MS + 15000;
 const NODE_MIN = 18;
 const HOST_NAME = CURSOR ? 'Cursor' : 'Claude Code';
 
@@ -266,12 +268,130 @@ function installCopy(data, id, manifest) {
     if (result.error) return result.error.code === 'ETIMEDOUT' ? 'timeout' : 'npm';
     if (result.status !== 0) return result.status === null ? 'copy' : 'network'; // no exit status: npm was killed by a signal
     if (!verifiedEntry(manifest, path.join(stage, 'node_modules'))) return 'mismatch';
-    fs.renameSync(stage, path.join(data, id));
+    const final = path.join(data, id);
+    try {
+      fs.renameSync(stage, final);
+    } catch {
+      // Another start (one that took over our lock) put its copy there first: use it only if it passes the same check.
+      return privateDir(final) && verifiedEntry(manifest, path.join(final, 'node_modules')) ? '' : 'copy';
+    }
     return '';
   } catch {
     return 'copy';
   } finally {
     removeQuietly(stage);
+  }
+}
+
+// The install lock only serializes installs; the verified-copy check (verifiedEntry) stays the one thing that decides what runs.
+// The lock directory holds numbered owner files, owner.1, owner.2, ...: the highest number is the current owner (pid, host name, random
+// token). A file is created complete and exclusively (written under a temporary name, then link()ed to its number), so for each
+// number exactly one start wins. That is also how a lock is taken over: the winner of owner.<n+1> owns it, with no lock removed or moved,
+// so concurrent takeovers end with exactly one owner. A waiting start takes a lock over only when the current owner file is older than
+// LOCK_STALE_MS, or is a trustworthy file (plain, this user's, small, valid JSON, same host) whose pid is certainly gone (ESRCH).
+// A live pid, EPERM, a missing, garbled, symlinked or foreign owner file all mean "maybe alive": only the age rule applies.
+const OWNER_FILE = /^owner\.(\d{1,6})$/;
+
+function ownerGone(owner) {
+  if (!owner || owner.host !== os.hostname()) return false;
+  try {
+    process.kill(owner.pid, 0);
+    return false;
+  } catch (error) {
+    return Boolean(error) && error.code === 'ESRCH';
+  }
+}
+
+// { gone } when there is no lock; { dir: false, mtime } for anything that is not a plain directory of ours (a symlink is never
+// followed); else { dir: true, gen, owner (null when untrustworthy), mtime } for the highest numbered owner file.
+function lockState(lock) {
+  let stat;
+  try {
+    stat = fs.lstatSync(lock);
+  } catch {
+    return { gone: true };
+  }
+  if (!stat.isDirectory() || !owned(stat)) return { dir: false, mtime: stat.mtimeMs };
+  let gen = 0;
+  try {
+    for (const name of fs.readdirSync(lock)) {
+      const match = OWNER_FILE.exec(name);
+      if (match && Number(match[1]) > gen) gen = Number(match[1]);
+    }
+  } catch {
+    return { dir: false, mtime: stat.mtimeMs };
+  }
+  if (gen === 0) return { dir: true, gen, owner: null, mtime: stat.mtimeMs };
+  try {
+    const file = path.join(lock, `owner.${gen}`);
+    const info = fs.lstatSync(file);
+    let owner = null;
+    if (info.isFile() && owned(info) && info.size <= 512) {
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (parsed !== null && typeof parsed === 'object' && Number.isSafeInteger(parsed.pid) && parsed.pid > 0
+        && typeof parsed.host === 'string' && typeof parsed.token === 'string') owner = parsed;
+    }
+    return { dir: true, gen, owner, mtime: info.mtimeMs };
+  } catch {
+    return { dir: true, gen, owner: null, mtime: stat.mtimeMs };
+  }
+}
+
+// Creates owner.<gen> for this process. Returns the token when this start won that number, otherwise ''.
+function writeOwner(lock, gen) {
+  const token = crypto.randomBytes(16).toString('hex');
+  const temp = path.join(lock, `owner.tmp-${process.pid}-${token.slice(0, 8)}`);
+  try {
+    fs.writeFileSync(temp, JSON.stringify({ pid: process.pid, host: os.hostname(), token, created: Date.now() }), { flag: 'wx', mode: 0o600 });
+    fs.linkSync(temp, path.join(lock, `owner.${gen}`));
+    return token;
+  } catch {
+    return '';
+  } finally {
+    try { fs.unlinkSync(temp); } catch { /* already gone */ }
+  }
+}
+
+// Returns this start's token when it now owns the lock, otherwise ''. 'folder' when the lock cannot be created at all.
+function claimLock(data, id, lock) {
+  try {
+    fs.mkdirSync(lock, { mode: 0o700 });
+    return writeOwner(lock, 1) || ''; // '' if a waiting start already took the new, still ownerless lock over
+  } catch (error) {
+    if (!error || error.code !== 'EEXIST') return 'folder';
+  }
+  const state = lockState(lock);
+  if (state.gone) return '';
+  const stale = Date.now() - state.mtime > LOCK_STALE_MS || (state.dir && ownerGone(state.owner));
+  if (!stale) return '';
+  if (state.dir) return state.gen < 999999 ? writeOwner(lock, state.gen + 1) : '';
+  // Not a plain directory of ours (a symlink, a file, someone else's directory), older than the stale age: move only that name aside.
+  const aside = path.join(data, `${id}.lock.old-${process.pid}-${crypto.randomBytes(4).toString('hex')}`);
+  try {
+    fs.renameSync(lock, aside);
+    removeQuietly(aside);
+  } catch {
+    // another start was first
+  }
+  return '';
+}
+
+function releaseLock(lock, token) {
+  const state = lockState(lock);
+  if (state.dir && state.owner && state.owner.token === token) removeQuietly(lock);
+}
+
+// Stage directories and moved-aside locks of killed installs, older than the stale age. Run only by the start that holds the lock.
+function sweep(data, id) {
+  try {
+    for (const name of fs.readdirSync(data)) {
+      if (!name.startsWith(`${id}.stage-`) && !name.startsWith(`${id}.lock.old-`)) continue;
+      const target = path.join(data, name);
+      const stat = fs.lstatSync(target);
+      if (stat.isDirectory() && owned(stat) && Date.now() - stat.mtimeMs > LOCK_STALE_MS) removeQuietly(target);
+    }
+  } catch {
+    // best effort
   }
 }
 
@@ -299,14 +419,9 @@ function dataCopy(manifest, install) {
   const lock = path.join(data, `${id}.lock`);
   const deadline = Date.now() + LOCK_WAIT_MS;
   while (Date.now() < deadline) {
-    try {
-      fs.mkdirSync(lock, { mode: 0o700 });
-    } catch {
-      try {
-        if (Date.now() - fs.statSync(lock).mtimeMs > LOCK_STALE_MS) removeQuietly(lock);
-      } catch {
-        // lock released meanwhile
-      }
+    const token = claimLock(data, id, lock);
+    if (token === 'folder') return { why: 'folder' };
+    if (!token) {
       sleep(250);
       entry = check();
       if (entry) return { entry };
@@ -315,13 +430,14 @@ function dataCopy(manifest, install) {
     try {
       entry = check();
       if (entry) return { entry };
+      sweep(data, id);
       removeQuietly(dir);
       const why = installCopy(data, id, manifest);
       if (why) return { why };
       entry = check();
       return entry ? { entry } : { why: 'mismatch' };
     } finally {
-      removeQuietly(lock);
+      releaseLock(lock, token);
     }
   }
   return { why: 'lock' };
@@ -343,7 +459,8 @@ function dataCopy(manifest, install) {
 //
 // The stub itself (serveKeyless) requires nothing, starts no child process, opens no network and no file, and writes only to
 // stdout and stderr.
-const MCP_VERSIONS = ['2024-11-05', '2025-06-18', '2025-11-25']; // dist/cli.js:599 and :616; the newest is the fallback
+const ELICITATION_VERSIONS = ['2025-06-18', '2025-11-25']; // dist/cli.js:599
+const DEFAULT_MCP_VERSION = '2024-11-05'; // dist/cli.js:616
 const MAX_LINE_BYTES = 1024 * 1024;
 const STUB_NOTICE = 'Marrow plugin: no Marrow key on this machine, so the Marrow MCP server started with no tools. The plugin hooks still apply.';
 const STUB_INSTRUCTIONS = 'This Marrow server started without a Marrow key on this machine, so it has no tools. '
@@ -366,6 +483,17 @@ function keyless(entry) {
   } catch {
     return false;
   }
+}
+
+// The protocolVersion the pinned server answers (noteClientCapabilities, dist/cli.js:605-617): the requested one only when it is
+// in ELICITATION_VERSIONS AND the client's capabilities.elicitation is an object; every other input gets 2024-11-05.
+function negotiate(params) {
+  const record = params && typeof params === 'object' ? params : {};
+  const capabilities = record.capabilities && typeof record.capabilities === 'object' ? record.capabilities : {};
+  const requested = typeof record.protocolVersion === 'string' ? record.protocolVersion : '';
+  const elicits = Boolean(capabilities.elicitation && typeof capabilities.elicitation === 'object')
+    && ELICITATION_VERSIONS.includes(requested);
+  return elicits ? requested : DEFAULT_MCP_VERSION;
 }
 
 // Newline-delimited JSON-RPC 2.0 on stdio. Exits 0 when stdin ends.
@@ -392,11 +520,9 @@ function serveKeyless(serverVersion) {
     }
     if (msg.method === 'initialize') {
       initialized = true;
-      const asked = msg.params !== null && typeof msg.params === 'object' ? msg.params.protocolVersion : undefined;
-      const known = typeof asked === 'string' ? MCP_VERSIONS.indexOf(asked) : -1;
       return send(id, {
         result: {
-          protocolVersion: MCP_VERSIONS[known >= 0 ? known : MCP_VERSIONS.length - 1],
+          protocolVersion: negotiate(msg.params),
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: 'marrow', version: serverVersion },
           instructions: STUB_INSTRUCTIONS,
