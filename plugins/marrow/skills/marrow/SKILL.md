@@ -24,7 +24,7 @@ Installing the plugin needs no account and no key. The hooks run `@getmarrow/mcp
 
 When a seatbelt stop appears, tell the person what was stopped; it needs the machine owner. Do not retry it another way, and do not change Marrow's hooks, settings or plugins to get past it. Until a key exists:
 
-- the Marrow MCP server does not start;
+- the Marrow MCP server starts with no tools. It makes no decisions and records nothing, so `marrow_agent_runtime` and `marrow_commit` do not exist yet: do not look for them, do not treat having no tool as an approval, and leave the hooks' holds and stops as they are;
 - if the seatbelt cannot run on this machine (a home or agent settings folder that others can write), every hold stays, and the hold says "Marrow has no working key on this machine and its keyless mode is off here".
 
 To connect an account, the owner does this in their own terminal, never in chat:
@@ -43,7 +43,7 @@ To connect an account, the owner does this in their own terminal, never in chat:
 
 Never ask for the key in chat, never print it, and never put it on a command line yourself. With this plugin installed, do not suggest the installer activate command (`npx -y @getmarrow/install@latest activate`) or `marrow-mcp setup` for Claude Code in the same project, nor the installer's `--repair`, even when a Marrow message says to run them: they write a second copy of the hooks. The key step above is all the plugin needs to connect an account. To check the key and connection, the owner can run `npx -y @getmarrow/install@latest doctor`, which only reads; installer 0.1.71 and later count this plugin's hooks, and 0.1.70 and earlier report Claude Code hooks as missing because this plugin holds them.
 
-If a call is held with "Marrow plugin: ... could not load a verified copy" or "... is not installed yet", Marrow itself could not start. Tell the owner the message; do not retry around it.
+If a call is held with "Marrow plugin: ... could not load a verified copy" or "... is not installed yet", Marrow itself could not start. Marrow needs Node.js 18 or newer with npm on `PATH`: if the message says Node.js is too old or npm was not found, the owner installs them and restarts Claude Code. Tell the owner the message; do not retry around it.
 
 ## Updates and removal
 

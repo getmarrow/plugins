@@ -312,8 +312,31 @@ check('launcher runs only a manifest-verified copy and fails closed for the pre-
   assert.ok(/verifiedEntry\(manifest, path\.join\(stage, 'node_modules'\)\)/.test(launcher), 'staged copy verified before use');
   assert.ok(/permissionDecision: 'deny'/.test(launcher), 'pre-action hook holds the call when no verified copy loads');
   const requires = [...launcher.matchAll(/require\(([^)]+)\)/g)].map((m) => m[1]).sort();
-  assert.deepStrictEqual(requires, ["'child_process'", "'crypto'", "'fs'", "'os'", "'path'", 'entry']);
+  // envFile: the pinned server's own dist/env.js, asked whether a key exists (see the keyless stub check below).
+  assert.deepStrictEqual(requires, ["'child_process'", "'crypto'", "'fs'", "'os'", "'path'", 'entry', 'envFile']);
   assert.ok(/permission: 'deny'/.test(launcher) && /process\.exitCode = 2/.test(launcher), 'Cursor pre-action hook blocks (exit 2) when no verified copy loads');
+});
+
+check('keyless MCP stub: runs only for mcp, only after the verified copy and the server\'s own key test, and touches nothing', () => {
+  const begin = launcher.indexOf('// ---- keyless MCP stub (begin)');
+  const end = launcher.indexOf('// ---- keyless MCP stub (end)');
+  assert.ok(begin > 0 && end > begin, 'stub markers');
+  const stub = launcher.slice(begin, end).replace(/^\s*\/\/.*$/gm, '');
+  // The decision: the server's own call (no options), a strict empty-string test, any doubt -> the real server.
+  assert.ok(/require\(envFile\)\.resolveMarrowEnv\(\)/.test(stub), 'asks the verified copy\'s own resolver with no options');
+  assert.ok(/resolved\.apiKey !== ''\) return false/.test(stub), 'strict empty-string key test');
+  assert.ok(/url\.protocol === 'https:' && !url\.username && !url\.password/.test(stub), 'the server\'s own base URL test');
+  assert.ok(/catch \{\s*return false;/.test(stub), 'a throw runs the real server');
+  assert.ok(/args\[0\] === MCP_MODE && keyless\(entry\)\) return serveKeyless\(/.test(launcher), 'only for the mcp argument');
+  assert.ok(launcher.indexOf('keyless(entry)') > launcher.indexOf('dataCopy(manifest, install)'), 'after the verified copy is chosen');
+  // serveKeyless: no module loading, child process, network, file or timer API.
+  const serve = stub.slice(stub.indexOf('function serveKeyless'));
+  for (const word of ['require', 'child_process', 'spawn', 'exec', 'fork', 'net', 'http', 'tls', 'dns', 'dgram', 'fetch', 'WebSocket', 'readFile', 'writeFile', 'appendFile', 'mkdir', 'rename', 'unlink', 'rmSync', 'fs.', 'process.env', 'process.argv', 'setTimeout', 'setInterval']) {
+    assert.ok(!new RegExp('\\b' + word.replace('.', '\\.') + '\\b').test(serve), 'stub uses ' + word);
+  }
+  // Nothing selects the stub: the launcher reads no env variable of its own for it.
+  assert.ok(!/process\.env\.(?!CLAUDE_PLUGIN_DATA)/.test(launcher.replace(/\.\.\.process\.env/g, '')), 'launcher reads an env variable besides CLAUDE_PLUGIN_DATA');
+  assert.ok(!/allow|approv|permit|grant|authori[sz]|proceed|decision|safe to/i.test(stub.slice(stub.indexOf('const STUB_INSTRUCTIONS'), stub.indexOf('function keyless'))), 'instructions carry a decision-like word');
 });
 
 check('session check only reads files and prints fixed text', () => {

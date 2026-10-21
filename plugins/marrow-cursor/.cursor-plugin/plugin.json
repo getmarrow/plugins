@@ -1,7 +1,7 @@
 {
   "name": "marrow",
   "displayName": "Marrow",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Approvals, policy and receipts for agent actions. Adds Marrow's Cursor hooks (pinned @getmarrow/mcp 3.9.105, with the free keyless seatbelt), the Marrow MCP server and a short skill. No key in any config. Hooks are cooperative, client-reported control.",
   "author": {
     "name": "Marrow"

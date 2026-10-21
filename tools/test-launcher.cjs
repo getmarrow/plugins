@@ -28,6 +28,8 @@ function result(ok, name, detail = '') {
   if (ok) pass += 1; else fail += 1;
   process.stdout.write(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` (${detail})` : ''}\n`);
 }
+// T2 rows (keyless MCP stub, honest Node/npm messages) live in tools/test-launcher-t2.cjs; their two slow waits start now and run beside everything else.
+const t2 = require('./test-launcher-t2.cjs').start({ host, repo, result });
 
 // A preload that records every child process the launcher (or npm) starts, so a test can show that a hook
 // ran no npm at all.
@@ -281,8 +283,9 @@ function serverStart() {
   result(!/added \d+ packages|npm (?:WARN|ERR)/.test(r.stdout) && dataCopies(p).length === 1, '10 MCP start bootstraps with clean stdout', `exit ${r.status}, stdout ${r.stdout.length} bytes`);
 }
 
-concurrent().then(() => {
+concurrent().then(async () => {
   serverStart();
+  await t2.finish();
   fs.rmSync(work, { recursive: true, force: true });
   process.stdout.write(`RESULT pass=${pass} fail=${fail}\n`);
   process.exit(fail ? 1 : 0);

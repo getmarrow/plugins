@@ -19,6 +19,10 @@
 // stops after its timeout would let the tool call run. When no verified copy can be loaded, the
 // pre-action hook holds the tool call at once (fail closed) and the other entrypoints exit with a
 // non-blocking error.
+// With no Marrow key the pinned server would exit at once, and the host would show the plugin as broken. For the
+// `mcp` argument only, and only when the pinned server's own key check says there is no key, the launcher answers
+// the MCP protocol itself with a server that has no tools (see the keyless stub below). A key anywhere the server reads
+// one, or any doubt, runs the pinned server exactly as before.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -54,14 +58,61 @@ const ENTRYPOINTS = new Set(CURSOR === CLAUDE ? [] : CURSOR ? [
 const NPM_TIMEOUT_MS = 120000;
 const LOCK_WAIT_MS = 150000;
 const LOCK_STALE_MS = 300000;
+const NODE_MIN = 18;
+const HOST_NAME = CURSOR ? 'Cursor' : 'Claude Code';
 
 const args = process.argv.slice(2);
 
-function fail(reason) {
-  const fix = CURSOR
-    ? 'Reconnect to the network and retry, or ask the owner to reinstall the Marrow plugin in Cursor.'
-    : 'Reconnect to the network and retry, or ask the owner to reinstall the plugin: '
-      + 'claude plugin uninstall marrow@getmarrow, then claude plugin install marrow@getmarrow.';
+const REINSTALL = CURSOR
+  ? 'ask the owner to reinstall the Marrow plugin in Cursor.'
+  : 'ask the owner to reinstall the plugin: '
+    + 'claude plugin uninstall marrow@getmarrow, then claude plugin install marrow@getmarrow.';
+const FIX_NETWORK = `Reconnect to the network and retry, or ${REINSTALL}`;
+const FIX_TOOLCHAIN = `Install Node.js ${NODE_MIN} or newer with npm on PATH, then restart ${HOST_NAME}.`;
+const FIX_REINSTALL = `${REINSTALL[0].toUpperCase()}${REINSTALL.slice(1)}`;
+const FIX_WAIT = `Wait for the other start to finish, then restart ${HOST_NAME}.`;
+const FIX_FOLDER = CURSOR
+  ? 'Ask the owner to make the Marrow plugin data folder private to their account, or delete it, then restart Cursor.'
+  : FIX_REINSTALL;
+
+// Why no verified copy could be loaded. Every text names the real cause and carries no path, env value or npm output.
+const NOT_LOADED = {
+  reason: 'could not load a verified copy of the pinned @getmarrow/mcp.',
+  fix: FIX_NETWORK,
+};
+const CAUSES = {
+  // A tool hook only looks for a copy; it never installs one.
+  idle: {
+    reason: 'the pinned @getmarrow/mcp is not installed yet (the plugin installs it when its Marrow server starts or on your first prompt).',
+    fix: FIX_NETWORK,
+  },
+  npm: {
+    reason: 'npm was not found or could not be started, and it is needed to install the pinned @getmarrow/mcp once.',
+    fix: FIX_TOOLCHAIN,
+  },
+  timeout: {
+    reason: `installing the pinned @getmarrow/mcp with npm took longer than ${NPM_TIMEOUT_MS / 1000} seconds.`,
+    fix: FIX_NETWORK,
+  },
+  network: {
+    reason: 'npm could not install the pinned @getmarrow/mcp (usually no network or an unreachable npm registry).',
+    fix: FIX_NETWORK,
+  },
+  mismatch: {
+    reason: 'the installed copy of the pinned @getmarrow/mcp does not match its manifest.',
+    fix: FIX_REINSTALL,
+  },
+  lock: {
+    reason: `another Marrow start was still installing the pinned @getmarrow/mcp after ${LOCK_WAIT_MS / 1000} seconds.`,
+    fix: FIX_WAIT,
+  },
+  folder: {
+    reason: 'the Marrow plugin data folder is missing, not owned by this user or open to other users.',
+    fix: FIX_FOLDER,
+  },
+};
+
+function fail(reason, fix = FIX_NETWORK) {
   if (args[0] === PRE_ACTION && CURSOR) {
     // Cursor: exit 2 blocks, and the hooks that gate are failClosed as the installer writes them.
     const message = `Marrow plugin: ${reason} The action is held until Marrow can start. ${fix}`;
@@ -83,6 +134,12 @@ function fail(reason) {
   }
   process.stderr.write(`Marrow plugin: ${reason} ${fix}\n`);
   process.exitCode = 1;
+}
+
+// `why` is a key of CAUSES; anything else (an unexpected install error) keeps the generic text.
+function failFor(why) {
+  const cause = Object.prototype.hasOwnProperty.call(CAUSES, why) ? CAUSES[why] : NOT_LOADED;
+  return fail(cause.reason, cause.fix);
 }
 
 function readJson(file) {
@@ -187,9 +244,10 @@ function sleep(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+// Returns '' once the verified copy is in place, otherwise the key of CAUSES that names what went wrong.
 function installCopy(data, id, manifest) {
   const npm = npmCommand();
-  if (!npm) return false;
+  if (!npm) return 'npm';
   const stage = path.join(data, `${id}.stage-${process.pid}-${crypto.randomBytes(4).toString('hex')}`);
   try {
     fs.mkdirSync(stage, { mode: 0o700 });
@@ -205,11 +263,13 @@ function installCopy(data, id, manifest) {
       timeout: NPM_TIMEOUT_MS,
       windowsHide: true,
     });
-    if (result.status !== 0 || !verifiedEntry(manifest, path.join(stage, 'node_modules'))) return false;
+    if (result.error) return result.error.code === 'ETIMEDOUT' ? 'timeout' : 'npm';
+    if (result.status !== 0) return result.status === null ? 'copy' : 'network'; // no exit status: npm was killed by a signal
+    if (!verifiedEntry(manifest, path.join(stage, 'node_modules'))) return 'mismatch';
     fs.renameSync(stage, path.join(data, id));
-    return true;
+    return '';
   } catch {
-    return false;
+    return 'copy';
   } finally {
     removeQuietly(stage);
   }
@@ -219,20 +279,22 @@ function installCopy(data, id, manifest) {
 // deletes this directory when the plugin is uninstalled. Cursor gives plugins no data folder, so the
 // Cursor plugin keeps its copy in ~/.marrow/cursor-plugin (removed by hand after an uninstall).
 // Without `install`, only an already verified copy is used: nothing is created, installed or waited for.
+// Returns { entry } for a verified copy, otherwise { why } (a key of CAUSES).
 function dataCopy(manifest, install) {
   const data = CURSOR ? path.join(os.homedir(), '.marrow', 'cursor-plugin') : process.env.CLAUDE_PLUGIN_DATA;
-  if (!data || !path.isAbsolute(data)) return null;
+  if (!data || !path.isAbsolute(data)) return { why: install ? 'folder' : 'idle' };
   const id = `mcp-${manifest.mcp.version}-${manifest.sha256.slice(0, 16)}`;
   const dir = path.join(data, id);
   const check = () => (privateDir(dir) ? verifiedEntry(manifest, path.join(dir, 'node_modules')) : null);
   let entry = check();
-  if (entry || !install) return entry;
+  if (entry) return { entry };
+  if (!install) return { why: 'idle' };
   try {
     fs.mkdirSync(data, { recursive: true, mode: 0o700 });
     const stat = fs.lstatSync(data);
-    if (!stat.isDirectory() || !owned(stat) || (POSIX && (stat.mode & 0o002) !== 0)) return null;
+    if (!stat.isDirectory() || !owned(stat) || (POSIX && (stat.mode & 0o002) !== 0)) return { why: 'folder' };
   } catch {
-    return null;
+    return { why: 'folder' };
   }
   const lock = path.join(data, `${id}.lock`);
   const deadline = Date.now() + LOCK_WAIT_MS;
@@ -247,20 +309,161 @@ function dataCopy(manifest, install) {
       }
       sleep(250);
       entry = check();
-      if (entry) return entry;
+      if (entry) return { entry };
       continue;
     }
     try {
       entry = check();
-      if (entry) return entry;
+      if (entry) return { entry };
       removeQuietly(dir);
-      return installCopy(data, id, manifest) ? check() : null;
+      const why = installCopy(data, id, manifest);
+      if (why) return { why };
+      entry = check();
+      return entry ? { entry } : { why: 'mismatch' };
     } finally {
       removeQuietly(lock);
     }
   }
-  return null;
+  return { why: 'lock' };
 }
+
+// ---- keyless MCP stub (begin) ----------------------------------------------------------------------
+// Without a key, the pinned server prints "MARROW_API_KEY environment variable is required" and exits 1
+// (@getmarrow/mcp 3.9.105 dist/cli.js:575-579), which hosts show as a broken plugin. This stub keeps the host's
+// connection healthy with zero tools. It judges nothing and records nothing, and the plugin's hooks are separate
+// entrypoints that it never touches.
+//
+// When it runs: only for the `mcp` argument, only from a verified copy, and only when the pinned server's own
+// key test (dist/cli.js:560-579: resolveMarrowEnv() with no options, a base URL it accepts, then an empty apiKey)
+// says there is no key.
+// The test is asked of the verified copy's own dist/env.js (listed in mcp-manifest.json, so covered by its sha256).
+// Loading env.js and calling resolveMarrowEnv() only reads files and the environment: no writes, no network, no child
+// process (it requires fs, os and path). Nothing selects the stub: no flag, no env variable, no file. Any doubt (the
+// call throws, returns a non-object, or the key is anything but an empty string) runs the pinned server as before.
+//
+// The stub itself (serveKeyless) requires nothing, starts no child process, opens no network and no file, and writes only to
+// stdout and stderr.
+const MCP_VERSIONS = ['2024-11-05', '2025-06-18', '2025-11-25']; // dist/cli.js:599 and :616; the newest is the fallback
+const MAX_LINE_BYTES = 1024 * 1024;
+const STUB_NOTICE = 'Marrow plugin: no Marrow key on this machine, so the Marrow MCP server started with no tools. The plugin hooks still apply.';
+const STUB_INSTRUCTIONS = 'This Marrow server started without a Marrow key on this machine, so it has no tools. '
+  + 'It does not judge, check or record any action. '
+  + 'The Marrow plugin hooks still apply on this machine, with their free keyless seatbelt. '
+  + `To connect a Marrow account, the owner follows the key steps in the Marrow skill in their own terminal, then restarts ${HOST_NAME}. `
+  + 'A key can not be added from this chat.';
+
+function keyless(entry) {
+  try {
+    const envFile = path.join(path.dirname(entry), 'env.js');
+    const resolved = require(envFile).resolveMarrowEnv();
+    if (resolved === null || typeof resolved !== 'object' || resolved.apiKey !== '') return false;
+    // Before it looks at the key the server checks its base URL (dist/cli.js:564-565, validateBaseUrl in dist/index.js): one that is
+    // not https or that carries credentials ends the server with a different error, which the owner needs to see. Same test here.
+    const base = resolved.baseUrl || 'https://api.getmarrow.ai';
+    if (typeof base !== 'string') return false;
+    const url = new URL(base);
+    return url.protocol === 'https:' && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+// Newline-delimited JSON-RPC 2.0 on stdio. Exits 0 when stdin ends.
+function serveKeyless(serverVersion) {
+  const has = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+  const send = (id, body) => process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id, ...body })}\n`);
+  const refuse = (id, code, message) => send(id, { error: { code, message } });
+  let initialized = false;
+
+  function handle(text) {
+    let msg;
+    try {
+      msg = JSON.parse(text);
+    } catch {
+      return refuse(null, -32700, 'Parse error.');
+    }
+    if (msg === null || typeof msg !== 'object' || Array.isArray(msg) || msg.jsonrpc !== '2.0' || typeof msg.method !== 'string') {
+      return refuse(null, -32600, 'Invalid request.');
+    }
+    if (!has(msg, 'id')) return undefined; // a notification gets no reply
+    const id = msg.id;
+    if (!(typeof id === 'string' || id === null || (typeof id === 'number' && Number.isFinite(id)))) {
+      return refuse(null, -32600, 'Invalid request.');
+    }
+    if (msg.method === 'initialize') {
+      initialized = true;
+      const asked = msg.params !== null && typeof msg.params === 'object' ? msg.params.protocolVersion : undefined;
+      const known = typeof asked === 'string' ? MCP_VERSIONS.indexOf(asked) : -1;
+      return send(id, {
+        result: {
+          protocolVersion: MCP_VERSIONS[known >= 0 ? known : MCP_VERSIONS.length - 1],
+          capabilities: { tools: { listChanged: false } },
+          serverInfo: { name: 'marrow', version: serverVersion },
+          instructions: STUB_INSTRUCTIONS,
+        },
+      });
+    }
+    if (!initialized) return refuse(id, -32002, 'Server not initialized. Send initialize first.');
+    switch (msg.method) {
+      case 'ping': return send(id, { result: {} });
+      case 'tools/list': return send(id, { result: { tools: [] } });
+      case 'prompts/list': return send(id, { result: { prompts: [] } });
+      case 'resources/list': return send(id, { result: { resources: [] } });
+      case 'resources/templates/list': return send(id, { result: { resourceTemplates: [] } });
+      case 'tools/call': return refuse(id, -32602, 'This server has no tools.');
+      default: return refuse(id, -32601, 'Method not found.');
+    }
+  }
+
+  function dispatch(chunks) {
+    const text = Buffer.concat(chunks).toString('utf8');
+    if (!text.trim()) return;
+    try {
+      handle(text);
+    } catch {
+      refuse(null, -32603, 'Internal error.');
+    }
+  }
+
+  let chunks = [];
+  let size = 0;
+  let skipping = false; // inside a line over the limit: dropped up to the next newline, never buffered
+  process.stdout.on('error', () => process.exit(0));
+  process.stdin.on('error', () => { process.exitCode = 1; });
+  process.stdin.on('data', (chunk) => {
+    let from = 0;
+    while (from < chunk.length) {
+      const newline = chunk.indexOf(10, from);
+      const to = newline === -1 ? chunk.length : newline;
+      if (!skipping) {
+        size += to - from;
+        if (size > MAX_LINE_BYTES) {
+          skipping = true;
+          chunks = [];
+          size = 0;
+          refuse(null, -32600, 'Request too large.');
+        } else if (to > from) {
+          chunks.push(chunk.subarray(from, to));
+        }
+      }
+      if (newline === -1) return;
+      if (!skipping) dispatch(chunks);
+      chunks = [];
+      size = 0;
+      skipping = false;
+      from = newline + 1;
+    }
+  });
+  process.stdin.on('end', () => {
+    if (!skipping) dispatch(chunks);
+  });
+  try {
+    process.stderr.write(`${STUB_NOTICE}\n`);
+  } catch {
+    // a closed stderr changes nothing
+  }
+}
+// ---- keyless MCP stub (end) -------------------------------------------------------------------------
 
 function main() {
   if (args.length === 0) {
@@ -280,17 +483,25 @@ function main() {
     process.exitCode = 1;
     return;
   }
+  // Checked before anything else is read or started, so a machine with an old Node says so instead of failing in some
+  // other way. Not a number (an odd runtime) counts as too old.
+  const nodeMajor = Number.parseInt(process.versions.node, 10);
+  if (!(nodeMajor >= NODE_MIN)) {
+    return fail(`this Node.js is too old (major version ${Number.isFinite(nodeMajor) ? nodeMajor : 'unknown'}); the pinned @getmarrow/mcp needs Node.js ${NODE_MIN} or newer.`, FIX_TOOLCHAIN);
+  }
   const manifest = loadManifest();
   if (!manifest) return fail('its pinned @getmarrow/mcp manifest is missing or does not match package.json.');
   const install = INSTALLERS.has(args[0]);
-  const entry = verifiedEntry(manifest, path.join(ROOT, 'node_modules')) || dataCopy(manifest, install);
+  let entry = verifiedEntry(manifest, path.join(ROOT, 'node_modules'));
   if (!entry) {
-    return fail(install
-      ? 'could not load a verified copy of the pinned @getmarrow/mcp.'
-      : 'the pinned @getmarrow/mcp is not installed yet (the plugin installs it when its Marrow server starts or on your first prompt).');
+    const copy = dataCopy(manifest, install);
+    if (!copy.entry) return failFor(copy.why);
+    entry = copy.entry;
   }
   // `prepare` only makes sure the verified copy exists.
   if (args[0] === PREPARE) return;
+  // No key anywhere the pinned server reads one: answer the MCP protocol with a server that has no tools.
+  if (args[0] === MCP_MODE && keyless(entry)) return serveKeyless(manifest.mcp.version);
   process.argv = [process.argv[0], entry, ...(args[0] === MCP_MODE ? [] : args)];
   require(entry);
 }

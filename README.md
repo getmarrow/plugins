@@ -1,6 +1,6 @@
 # Marrow plugins for Claude Code, Codex and Cursor
 
-The `getmarrow` marketplace for Claude Code, Cursor and Codex. Each host's `marrow` plugin adds Marrow's approval hooks, the Marrow MCP server and a short skill to that host. Codex also has `marrow-advisory`, with no hooks. Cursor cannot install its plugin yet: see "Install in Cursor" below.
+The `getmarrow` marketplace for Claude Code, Cursor and Codex. Each host's `marrow` plugin adds Marrow's approval hooks, the Marrow MCP server and a short skill to that host. Codex also has `marrow-advisory`, with no hooks. For Cursor, see "Install in Cursor" below.
 
 | Host | Plugin folder | Marketplace file |
 | --- | --- | --- |
@@ -8,7 +8,7 @@ The `getmarrow` marketplace for Claude Code, Cursor and Codex. Each host's `marr
 | Cursor | `plugins/marrow-cursor` | `.cursor-plugin/marketplace.json` |
 | Codex | `codex/marrow` (hooks), `codex/marrow-advisory` (no hooks; install one of the two, not both) | `.agents/plugins/marketplace.json` |
 
-Each plugin governs its own host only. The Claude Code plugin does not govern Cursor, even where Cursor imports Claude Code plugins: Cursor users will install the Cursor plugin once it can be installed (see "Install in Cursor" below).
+Each plugin governs its own host only. The Claude Code plugin does not govern Cursor, even where Cursor imports Claude Code plugins: Cursor users install the Cursor plugin (see "Install in Cursor" below).
 
 The Claude Code and Cursor plugins run `@getmarrow/mcp` 3.9.105, which includes the free keyless seatbelt: with no account and no key, their hooks stop seven kinds of action (see "Without a key: the keyless seatbelt" below). With an account, Marrow holds risky actions for approval and keeps the audit trail. The Codex plugins pin `@getmarrow/mcp` 3.9.102 and do not include the keyless seatbelt; it comes to them with the next update.
 
@@ -35,7 +35,15 @@ Check that `claude plugin marketplace list` shows `getmarrow` coming from `getma
 
 ## Install in Cursor
 
-Not available yet: Cursor cannot install this plugin today, from its marketplace or from this repository. We will update this section when it can.
+Works on macOS and Linux. <!-- WINDOWS-STATUS: set with the MCP 3.9.106 pin commit -->
+It needs Node.js 18 or later with npm on `PATH`. No account or key is needed to install.
+
+<!-- CURSOR-MARKETPLACE: listing pending Cursor review; Cliff adds the marketplace sentence once listed -->
+
+1. In Cursor, add `https://github.com/getmarrow/plugins` as a plugin source, then install `marrow` and restart Cursor. Cursor reads this repository's `main` branch, a read-only branch that mirrors `master`.
+2. Fallback, or to try a candidate: clone `getmarrow/plugins`, copy `plugins/marrow-cursor` to `~/.cursor/plugins/local/marrow`, and restart Cursor. Local plugins update only when you copy a newer folder over, and Cursor Enterprise may turn local plugins off.
+
+With no Marrow key, the Marrow MCP server shows as connected with 0 tools, and the plugin's hooks still apply: see "Without a key: the keyless seatbelt" below, which also shows how to connect an account.
 
 Only the MCP server, without hooks, is a one-click link (a page renders it as a link or an "Add to Cursor" button):
 
@@ -72,7 +80,7 @@ When a pre-action hook has no usable Marrow key and the machine shows no sign of
 - **It is a seatbelt, not a vault:** it runs on the machine as your user and makes no network call. A determined agent can get around a local check, for example with a script it writes now and runs later, an interpreter, or a tool path with no hook.
 - **With an account:** Marrow holds risky actions for approval and keeps the audit trail. A machine linked to an account but with no working key keeps every hold it had, and the seatbelt stops apply too. With a working key the answers and requests are unchanged; the seatbelt only watches and records would-stops locally.
 
-The Codex plugins pin `@getmarrow/mcp` 3.9.102 and do not include the keyless seatbelt; without a key their hooks hold protected actions with "Marrow has no API key" (see "Codex" below), and the seatbelt comes to them with the next update. The Marrow MCP server needs a key and does not start without one.
+The Codex plugins pin `@getmarrow/mcp` 3.9.102 and do not include the keyless seatbelt; without a key their hooks hold protected actions with "Marrow has no API key" (see "Codex" below), and the seatbelt comes to them with the next update. The Marrow MCP server's tools need a key: in the Claude Code and Cursor plugins the server starts with no tools until one exists, and the Codex plugins' server does not start without one.
 
 To connect an account, create an agent key at https://getmarrow.ai, then keep it in a file in your own terminal:
 
