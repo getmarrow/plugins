@@ -33,7 +33,7 @@ Check that `claude plugin marketplace list` shows `getmarrow` coming from `getma
 
 ## Install in Cursor
 
-Install **Marrow** from the Cursor plugin marketplace (Settings → Plugins), or add this repository as a plugin source. No account or key is needed to install, and no plugin config holds a key. The hooks and MCP server need Node.js 18 or later on `PATH`, and the first hook call installs the pinned package once (see "Pinned versions" below), so the first call needs the network. Restart Cursor after installing, then check that Cursor's hooks view lists Marrow's hooks.
+Not available yet: Cursor cannot install this plugin today, from its marketplace or from this repository. We will update this section when it can.
 
 Only the MCP server, without hooks, is a one-click link (a page renders it as a link or an "Add to Cursor" button):
 
