@@ -1,8 +1,8 @@
 {
   "schema": "marrow-plugin-mcp-manifest.v1",
   "mcp": {
-    "version": "3.9.104",
-    "integrity": "sha512-G/E8er08CbXLZ0epwqN2iwKr4sUwe5HaXv1f9ePf/WbVmpEoFSo/2UkGA4ZZQ+SyhsdhBxYrISv7ZYaYR8puVg=="
+    "version": "3.9.105",
+    "integrity": "sha512-coU1B1ee2AG0MQ6zgzmwj2IllqnpOQYwyihWTtG7rM67hnelMGHF0fY5Z7Rd2acFH4hw96yr73yaDraEkeht3w=="
   },
   "sdk": {
     "version": "3.7.67",
@@ -258,9 +258,9 @@
     "@getmarrow/sdk/dist/types.js.map",
     "@getmarrow/sdk/package.json"
   ],
-  "sha256": "e0d408711a68bfb63c0d326bffdba5a82a3bc02b60c216e9a0ea58e1110c70a4",
+  "sha256": "c0bdd9cdff4e3bafd9798c4479ab3455e5d4c4dadfc7303f2404220a985dc9f6",
   "source": {
     "repository": "getmarrow/marrow-mcp",
-    "commit": "7a521329626e206b5e6bb9e832be32da969c3c9f"
+    "commit": "8ffda0034d8b2590e8b7996b7be01debf1bd64f0"
   }
 }
