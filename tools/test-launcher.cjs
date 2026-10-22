@@ -57,7 +57,7 @@ function spied() {
 
 function baseEnv(extra = {}) {
   const env = {};
-  for (const key of ['PATH', 'LANG', 'TMPDIR', 'SystemRoot']) if (process.env[key]) env[key] = process.env[key];
+  for (const key of ['PATH', 'LANG', 'TMPDIR', 'SystemRoot', 'npm_config_registry']) if (process.env[key]) env[key] = process.env[key];
   return { ...env, HOME: home, USERPROFILE: home, npm_config_cache: warmCache, npm_config_update_notifier: 'false', ...extra };
 }
 const OFFLINE = () => ({ npm_config_registry: 'http://127.0.0.1:9/', npm_config_cache: fs.mkdtempSync(path.join(work, 'empty-cache-')), npm_config_fetch_retries: '0', npm_config_fetch_timeout: '2000' });
