@@ -1060,18 +1060,29 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
       'plugins/marrow/.claude-plugin/plugin.json', 'plugins/marrow/scripts/marrow-launch.cjs', 'plugins/marrow/scripts/marrow-session-check.cjs', 'plugins/marrow/skills/marrow/SKILL.md',
       'tools/check.cjs', 'tools/test-launcher-lock.cjs', 'tools/test-launcher-t2.cjs', 'tools/test-launcher.cjs', 'tools/test-session-check.cjs'];
     result(JSON.stringify(differing) === JSON.stringify(expected), 'T2-13 against be64842b, exactly these files differ: README, both SKILL.md, both plugin.json, both launchers, check.cjs, the three test files, and the first-hour session check with its test', differing.length === expected.length ? `${differing.length} files` : `unexpected: ${differing.filter((f) => !expected.includes(f)).join(',')} missing: ${expected.filter((f) => !differing.includes(f)).join(',')}`);
-    // No new Windows claim in either direction: existing Windows wording is untouched; the only new line is the placeholder marker.
+    // No new Windows claim in either direction: existing Windows wording is untouched, except the one README line that was
+    // replaced by the exact public line (ed81aa6a); the only other new line is the placeholder marker.
+    const WINDOWS_WAS = '**Windows:** Marrow\'s hooks do not work on native Windows yet: every action is blocked. Use WSL, or wait for the fix.';
+    const WINDOWS_PUBLIC = '**Windows:** Native Windows is not supported yet. Use WSL.';
+    const WINDOWS_MARKER = '<!-- WINDOWS-STATUS: set with the MCP 3.9.106 pin commit -->';
     const windowsLines = (dir, file) => fs.readFileSync(path.join(dir, file), 'utf8').split('\n').filter((l) => /windows/i.test(l));
     let windowsOk = true;
     let markers = 0;
+    let swaps = 0;
     for (const file of ['README.md', 'plugins/marrow/skills/marrow/SKILL.md', 'plugins/marrow-cursor/skills/marrow/SKILL.md', 'plugins/marrow-cursor/README.md']) {
       const before = windowsLines(baselineDir, file);
       const after = windowsLines(repo, file);
+      const dropped = before.filter((l) => !after.includes(l));
       const added = after.filter((l) => !before.includes(l));
-      windowsOk = windowsOk && before.every((l) => after.includes(l)) && added.every((l) => l.includes('<!-- WINDOWS-STATUS: set with the MCP 3.9.106 pin commit -->'));
-      markers += added.length;
+      const markerLines = added.filter((l) => l.includes(WINDOWS_MARKER));
+      const publicLines = added.filter((l) => l === WINDOWS_PUBLIC);
+      const readme = file === 'README.md' ? 1 : 0;
+      windowsOk = windowsOk && dropped.length === readme && dropped.every((l) => l === WINDOWS_WAS)
+        && publicLines.length === readme && markerLines.length === readme && added.length === publicLines.length + markerLines.length;
+      markers += markerLines.length;
+      swaps += publicLines.length;
     }
-    result(windowsOk && markers === 1, 'T2-13 Windows wording: every existing line kept byte for byte; the only new Windows line is the WINDOWS-STATUS placeholder comment', `${markers} marker`);
+    result(windowsOk && markers === 1 && swaps === 1, 'T2-13 Windows wording: the one be64842b README Windows line is replaced by exactly the public line (whole line "**Windows:** Native Windows is not supported yet. Use WSL."), every other existing line kept byte for byte; the only other new Windows line is the WINDOWS-STATUS placeholder comment', `${markers} marker, ${swaps} public line`);
     const dep = (dir) => JSON.stringify(JSON.parse(bytes(dir, 'plugins', 'marrow', 'package.json')).dependencies);
     result(dep(baselineDir) === dep(repo), 'T2-13 plugin dependencies are unchanged');
     const check = spawnSync(process.execPath, [path.join(repo, 'tools', 'check.cjs')], { cwd: repo, encoding: 'utf8', env: env() });
