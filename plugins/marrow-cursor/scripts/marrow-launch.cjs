@@ -465,11 +465,13 @@ function dataCopy(manifest, install) {
 const ELICITATION_VERSIONS = ['2025-06-18', '2025-11-25']; // dist/cli.js, noteClientCapabilities
 const DEFAULT_MCP_VERSION = '2024-11-05'; // dist/cli.js, noteClientCapabilities
 const MAX_LINE_BYTES = 1024 * 1024;
-// The one refusal text, for every start that is not an MCP host. It is the no-key text of @getmarrow/mcp 3.9.106 under a plugin
-// (PLUGIN_KEY_ERROR in its cli.ts, without the "Get a key" line: this launcher names no npx command). The 3.9.105 server's own text
-// cannot be reused: it names an unpinned npx command and `marrow-mcp setup`, which a plugin must not tell anyone to run.
-const NO_KEY_REFUSAL = 'Error: MARROW_API_KEY required. Marrow plugin: put MARROW_API_KEY in ~/.marrow/env, run chmod 600 ~/.marrow/env, '
-  + 'then /reload-plugins. The seatbelt hooks keep working without a key. Do not run marrow-mcp setup or activate for the plugin.\n';
+// The one refusal text, for every start that is not an MCP host. Its first sentence is the same as the no-key text of @getmarrow/mcp, but
+// it is this launcher's own text: it says the server did not start and gives a next step that exists in the host.
+// The 3.9.105 server's own text cannot be reused: it names an unpinned npx command and
+// `marrow-mcp setup`, which a plugin must not tell anyone to run.
+const NO_KEY_REFUSAL = 'Error: MARROW_API_KEY required. Marrow plugin: no Marrow key on this machine, so the Marrow MCP server did not start. '
+  + 'To connect an account, create an agent key at https://getmarrow.ai, put MARROW_API_KEY in ~/.marrow/env, run chmod 600 ~/.marrow/env, '
+  + 'then restart Claude Code or Cursor. The plugin hooks still apply without a key. Do not run marrow-mcp setup or activate for the plugin.\n';
 const STUB_NOTICE = 'Marrow plugin: no Marrow key on this machine, so the Marrow MCP server started with no tools. The plugin hooks still apply.';
 const STUB_INSTRUCTIONS = 'This Marrow server started without a Marrow key on this machine, so it has no tools. '
   + 'It does not judge, check or record any action. '

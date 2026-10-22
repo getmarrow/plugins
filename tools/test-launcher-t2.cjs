@@ -1110,8 +1110,9 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
     // One refusal text. It is the 3.9.106 plugin no-key text (PLUGIN_KEY_ERROR) without its "Get a key" line; the 3.9.105 server's own text
     // names an unpinned npx command and `marrow-mcp setup`, which tools/check.cjs keeps out of this launcher. The pinned server with
     // no key still ends the start the same way (exit 1, nothing on stdout): only the stderr wording differs.
-    const refusal = 'Error: MARROW_API_KEY required. Marrow plugin: put MARROW_API_KEY in ~/.marrow/env, run chmod 600 ~/.marrow/env, '
-      + 'then /reload-plugins. The seatbelt hooks keep working without a key. Do not run marrow-mcp setup or activate for the plugin.\n';
+    const refusal = 'Error: MARROW_API_KEY required. Marrow plugin: no Marrow key on this machine, so the Marrow MCP server did not start. '
+      + 'To connect an account, create an agent key at https://getmarrow.ai, put MARROW_API_KEY in ~/.marrow/env, run chmod 600 ~/.marrow/env, '
+      + 'then restart Claude Code or Cursor. The plugin hooks still apply without a key. Do not run marrow-mcp setup or activate for the plugin.\n';
     const server = direct(plug, { home });
     result(server.status === 1 && server.stdout === '' && server.stderr.includes(REQUIRED_LINE), 'T2-14 oracle: the pinned server with no key exits 1 with nothing on stdout (the exit the stub gives a non-MCP start)', `exit ${server.status}`);
     const launcherSource = fs.readFileSync(path.join(plug, 'scripts', 'marrow-launch.cjs'), 'utf8');
