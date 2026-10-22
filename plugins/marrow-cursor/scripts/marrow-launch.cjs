@@ -444,14 +444,16 @@ function dataCopy(manifest, install) {
 }
 
 // ---- keyless MCP stub (begin) ----------------------------------------------------------------------
-// Without a key, the pinned server prints "MARROW_API_KEY environment variable is required" and exits 1
-// (@getmarrow/mcp 3.9.105 dist/cli.js:575-579), which hosts show as a broken plugin. This stub keeps the host's
-// connection healthy with zero tools. It judges nothing and records nothing, and the plugin's hooks are separate
+// Without a key, the pinned server up to 3.9.105 prints "MARROW_API_KEY environment variable is required" and exits 1
+// (dist/cli.js, the `if (!API_KEY)` block after resolveMarrowEnv()), which hosts show as a broken plugin. This stub keeps the host's
+// connection healthy with zero tools. Line numbers are not cited: they move with every server release. It judges nothing and records nothing, and the plugin's hooks are separate
 // entrypoints that it never touches.
 //
 // When it runs: only for the `mcp` argument, only from a verified copy, and only when the pinned server's own
-// key test (dist/cli.js:560-579: resolveMarrowEnv() with no options, a base URL it accepts, then an empty apiKey)
-// says there is no key.
+// key test (dist/cli.js: resolveMarrowEnv() with no options, a base URL it accepts, then an empty apiKey)
+// says there is no key. keyless() below asks a stricter question than that test, so a doubt always runs the pinned server:
+// the resolver must report missing === true and no source, no refused owner key file, and no MARROW_KEY_<NAME> may be set
+// (@getmarrow/mcp 3.9.106 src/keyless-server.ts keylessStart makes the same decision).
 // The test is asked of the verified copy's own dist/env.js (listed in mcp-manifest.json, so covered by its sha256).
 // Loading env.js and calling resolveMarrowEnv() only reads files and the environment: no writes, no network, no child
 // process (it requires fs, os and path). Nothing selects the stub: no flag, no env variable, no file. Any doubt (the
@@ -459,8 +461,8 @@ function dataCopy(manifest, install) {
 //
 // The stub itself (serveKeyless) requires nothing, starts no child process, opens no network and no file, and writes only to
 // stdout and stderr.
-const ELICITATION_VERSIONS = ['2025-06-18', '2025-11-25']; // dist/cli.js:599
-const DEFAULT_MCP_VERSION = '2024-11-05'; // dist/cli.js:616
+const ELICITATION_VERSIONS = ['2025-06-18', '2025-11-25']; // dist/cli.js, noteClientCapabilities
+const DEFAULT_MCP_VERSION = '2024-11-05'; // dist/cli.js, noteClientCapabilities
 const MAX_LINE_BYTES = 1024 * 1024;
 const STUB_NOTICE = 'Marrow plugin: no Marrow key on this machine, so the Marrow MCP server started with no tools. The plugin hooks still apply.';
 const STUB_INSTRUCTIONS = 'This Marrow server started without a Marrow key on this machine, so it has no tools. '
@@ -474,7 +476,11 @@ function keyless(entry) {
     const envFile = path.join(path.dirname(entry), 'env.js');
     const resolved = require(envFile).resolveMarrowEnv();
     if (resolved === null || typeof resolved !== 'object' || resolved.apiKey !== '') return false;
-    // Before it looks at the key the server checks its base URL (dist/cli.js:564-565, validateBaseUrl in dist/index.js): one that is
+    // A clear "no key" only: the resolver says missing with no source, and no owner key file was refused (the field exists from 3.9.106;
+    // an older env.js leaves it undefined). A fleet key (MARROW_KEY_<NAME>) is still a key whatever the resolver returned: the server exits 1 for it.
+    if (resolved.missing !== true || resolved.source !== null || resolved.ownerFileRefused !== undefined) return false;
+    if (Object.keys(process.env).some((name) => name.startsWith('MARROW_KEY_') && Boolean(process.env[name]))) return false;
+    // Before it looks at the key the server checks its base URL (dist/cli.js, validateBaseUrl in dist/index.js): one that is
     // not https or that carries credentials ends the server with a different error, which the owner needs to see. Same test here.
     const base = resolved.baseUrl || 'https://api.getmarrow.ai';
     if (typeof base !== 'string') return false;
@@ -485,7 +491,7 @@ function keyless(entry) {
   }
 }
 
-// The protocolVersion the pinned server answers (noteClientCapabilities, dist/cli.js:605-617): the requested one only when it is
+// The protocolVersion the pinned server answers (noteClientCapabilities in dist/cli.js): the requested one only when it is
 // in ELICITATION_VERSIONS AND the client's capabilities.elicitation is an object; every other input gets 2024-11-05.
 function negotiate(params) {
   const record = params && typeof params === 'object' ? params : {};

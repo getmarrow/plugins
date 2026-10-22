@@ -383,7 +383,10 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
     // T2-4 equivalence matrix
     {
       const states = [];
-      const add = (name, prep) => states.push({ name, prep });
+      // The refused-owner-file states below (620, 644, 000, symlinks, group-writable folders) serve the stub with the pinned 3.9.105 env.js, which does not
+      // report ownerFileRefused. From 3.9.106 the resolver reports it and keyless() runs the server instead (T2-4c); move those rows to the server when the pin moves.
+      // `fleet`: a MARROW_KEY_<NAME> variable is set. The pinned server treats it as a key (exit 1, "required"), so the stub must not hide that text: server, not stub.
+      const add = (name, prep, flags = {}) => states.push({ name, prep, ...flags });
       add('none', () => ({}));
       add('empty MARROW_API_KEY', () => ({ extra: { MARROW_API_KEY: '' } }));
       add('whitespace-only MARROW_API_KEY', () => ({ extra: { MARROW_API_KEY: '   ', ...keyed } }));
@@ -403,7 +406,10 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
       add('env file: key line commented out', (h) => { ownerFile(h, 'env', [`#MARROW_API_KEY=${KEY}`, `MARROW_BASE_URL=${DEAD_URL}`]); return {}; });
       add('env file empty value', (h) => { ownerFile(h, 'env', ['MARROW_API_KEY=']); return {}; });
       add('FLEET_AGENT_ID set, no key', () => ({ extra: { MARROW_FLEET_AGENT_ID: 'agent-t2' } }));
-      add('AGENT_ID + per-agent key vars, no direct key', () => ({ extra: { MARROW_AGENT_ID: 'a1', MARROW_AGENT_ID_X: 'a1', MARROW_KEY_X: KEY } }));
+      add('AGENT_ID + per-agent key vars, no direct key', () => ({ extra: { MARROW_AGENT_ID: 'a1', MARROW_AGENT_ID_X: 'a1', MARROW_KEY_X: KEY } }), { fleet: true });
+      add('per-agent key var alone, no agent id', () => ({ extra: { MARROW_KEY_X: KEY } }), { fleet: true });
+      add('per-agent key var, lowercase suffix', () => ({ extra: { MARROW_KEY_x: KEY } }), { fleet: true });
+      add('per-agent key var empty (an empty slot is no key)', () => ({ extra: { MARROW_KEY_X: '' } }));
       add('project .env with a key (never read as a key)', (h) => { fs.writeFileSync(path.join(h, 'project', '.env'), `MARROW_API_KEY=${KEY}\n`, { mode: 0o600 }); return {}; });
       add('MARROW_BASE_URL http (invalid), no key', () => ({ extra: { MARROW_BASE_URL: 'http://127.0.0.1:9' } }));
       add('MARROW_BASE_URL https custom, no key', () => ({ extra: { MARROW_BASE_URL: DEAD_URL } }));
@@ -465,7 +471,7 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
           candidate: stub ? 'stub' : 'server',
           candidateStatus: cand.status,
         };
-        row.pass = oracleA !== null && (stub === row.oracle) && (row.direct === row.oracle);
+        row.pass = oracleA !== null && (stub === (row.oracle && !state.fleet)) && (row.direct === row.oracle);
         if (!stub && oracleA) {
           // The real server path: the candidate must equal be64842b (bytes, apart from fields two baseline runs already disagree on).
           const again = run((dir, o) => launch(dir, ['mcp'], o), baselinePlug);
@@ -479,7 +485,7 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
           row.pass = row.pass && row.sameAsBaseline;
         }
         rows.push(row);
-        result(row.pass, `T2-4 [${n}] ${state.name}: stub iff be64842b printed the "required" line`, `oracle ${row.oracle === null ? 'n/a' : row.oracle ? 'printed it' : 'did not'}, direct ${row.direct ? 'printed it' : 'did not'}, candidate ${row.candidate}${row.sameAsBaseline === undefined ? '' : row.sameAsBaseline ? ', identical to baseline' : ', DIFFERS from baseline'}`);
+        result(row.pass, `T2-4 [${n}] ${state.name}: ${state.fleet ? 'the server (not the stub) runs and prints the "required" line, as be64842b' : 'stub iff be64842b printed the "required" line'}`, `oracle ${row.oracle === null ? 'n/a' : row.oracle ? 'printed it' : 'did not'}, direct ${row.direct ? 'printed it' : 'did not'}, candidate ${row.candidate}${row.sameAsBaseline === undefined ? '' : row.sameAsBaseline ? ', identical to baseline' : ', DIFFERS from baseline'}`);
       }
       report.t24 = rows;
       result(rows.length >= 12 && rows.some((r) => r.candidate === 'stub') && rows.some((r) => r.candidate === 'server'), 'T2-4 the matrix has at least 12 states and exercises both outcomes', `${rows.length} states`);
@@ -494,6 +500,58 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
       result(off.status === 1 && off.stdout === '' && !off.stderr.includes(STUB_NOTICE) && !fs.existsSync(marker), 'T2-4b tampered copy (planted env.js), nothing verified to fall back on: no stub, exit 1, the planted file never ran', `exit ${off.status}`);
       const on = launch(planted, ['mcp'], { home: makeHome('t24b-online'), input: MCP_INPUT });
       result(on.status === 0 && on.stderr.includes(STUB_NOTICE) && !fs.existsSync(marker), 'T2-4b tampered copy, a verified copy installed beside it: the stub runs from the verified copy and the planted file never ran', `exit ${on.status}`);
+    }
+
+    // T2-4c the stub decision (keyless() in the launcher) against resolver results: one table, both launchers, the 3.9.105 and 3.9.106 env.js shapes.
+    // keyless() is lifted from the launcher source and run with a fake process.env and an env.js that returns the row's result, so the table also
+    // covers what the pinned 3.9.105 copy can not produce here (a refused owner file reports ownerFileRefused only from 3.9.106).
+    {
+      const launcherSource = fs.readFileSync(path.join(source, 'scripts', 'marrow-launch.cjs'), 'utf8');
+      const from = launcherSource.indexOf('function keyless(entry) {');
+      const to = launcherSource.indexOf('\n}\n', from) + 3;
+      const lift = (envVars) => new Function('require', 'path', 'URL', 'process', `${launcherSource.slice(from, to)}\nreturn keyless;`)(require, path, URL, { env: envVars });
+      const dir = path.join(work, 'keyless-decision');
+      fs.mkdirSync(dir, { recursive: true });
+      const decide = (resolverBody, envVars = {}) => {
+        fs.writeFileSync(path.join(dir, 'env.js'), `exports.resolveMarrowEnv = () => { ${resolverBody} };\n`);
+        delete require.cache[path.join(dir, 'env.js')]; // one fresh module per row
+        return lift(envVars)(path.join(dir, 'server.js'));
+      };
+      const none = { apiKey: '', baseUrl: 'https://api.getmarrow.ai', sessionId: undefined, source: null, missing: true, exactFix: 'Create an API key at https://getmarrow.ai' };
+      const as = (patch) => `return ${JSON.stringify({ ...none, ...patch })};`;
+      const table = [
+        // [name, resolver body, env vars, expected stub]
+        ['3.9.105 shape, no key', as({}), {}, true],
+        ['3.9.106 shape, no key, no owner file refused (field absent)', as({}), {}, true],
+        ['empty base URL means the default', as({ baseUrl: '' }), {}, true],
+        ['https custom base URL', as({ baseUrl: 'https://127.0.0.1:9' }), {}, true],
+        ['an owner key file was refused (ownerFileRefused true)', as({ ownerFileRefused: true }), {}, false],
+        ['ownerFileRefused false (any defined value is doubt)', as({ ownerFileRefused: false }), {}, false],
+        ['missing is false', as({ missing: false }), {}, false],
+        ['missing is absent', 'const r = ' + JSON.stringify(none) + '; delete r.missing; return r;', {}, false],
+        ['source is set', as({ source: 'MARROW_API_KEY' }), {}, false],
+        ['source is absent', 'const r = ' + JSON.stringify(none) + '; delete r.source; return r;', {}, false],
+        ['apiKey is whitespace', as({ apiKey: '   ' }), {}, false],
+        ['apiKey is a key', as({ apiKey: 'not-a-real-key', missing: false, source: 'MARROW_API_KEY' }), {}, false],
+        ['apiKey is absent', 'const r = ' + JSON.stringify(none) + '; delete r.apiKey; return r;', {}, false],
+        ['base URL http', as({ baseUrl: 'http://127.0.0.1:9' }), {}, false],
+        ['base URL with credentials', as({ baseUrl: 'https://user:pass@127.0.0.1:9' }), {}, false],
+        ['base URL unparsable', as({ baseUrl: 'not a url' }), {}, false],
+        ['base URL not a string', as({ baseUrl: 42 }), {}, false],
+        ['resolver returns null', 'return null;', {}, false],
+        ['resolver returns a string', "return '';", {}, false],
+        ['resolver throws', "throw new Error('t2 resolver failure');", {}, false],
+        ['fleet key alone (MARROW_KEY_A)', as({}), { MARROW_KEY_A: 'x' }, false],
+        ['fleet key with agent identity', as({}), { MARROW_FLEET_AGENT_ID: 'a', MARROW_AGENT_ID_A: 'a', MARROW_KEY_A: 'x' }, false],
+        ['fleet key, lowercase suffix', as({}), { MARROW_KEY_a: 'x' }, false],
+        ['fleet key, bare prefix MARROW_KEY_', as({}), { MARROW_KEY_: 'x' }, false],
+        ['two fleet slots, one empty', as({}), { MARROW_KEY_A: '', MARROW_KEY_B: 'x' }, false],
+        ['an empty fleet slot is no key', as({}), { MARROW_KEY_A: '' }, true],
+        ['other MARROW_ variables are not keys', as({}), { MARROW_APIKEY: 'x', MARROW_KEYS: 'x', MARROW_AGENT_ID: 'a' }, true],
+      ];
+      const wrong = table.filter(([, body, envVars, expected]) => decide(body, envVars) !== expected).map(([name]) => name);
+      result(wrong.length === 0, `T2-4c keyless() decision table: ${table.length} resolver results and env states, stub only for a clear "no key"`, wrong.length ? `wrong: ${wrong.join('; ')}` : `${table.length} rows`);
+      result(/function keyless\(entry\)[\s\S]*ownerFileRefused/.test(launcherSource.slice(from, to)) && !/dist\/cli\.js:\d/.test(launcherSource), 'T2-4c keyless() names ownerFileRefused, and no launcher comment cites a dist/cli.js line number');
     }
 
     // T2-5 resolver throws: today's path, never the stub
@@ -582,7 +640,7 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
       const norm = (t) => { const c = JSON.parse(JSON.stringify(t.init)); delete c.result.protocolVersion; return JSON.stringify(c); };
       result(transcripts.every((t) => JSON.stringify(t.tools) === JSON.stringify(transcripts[0].tools) && t.tools.result.tools.length === 0), 'T2-8 forged initialize: the tools list is identical (empty) in all variants', `${transcripts.length} variants`);
       result(transcripts.every((t) => norm(t) === norm(transcripts[0])), 'T2-8 forged initialize: the initialize result is identical apart from protocolVersion (same capabilities, serverInfo and instructions)');
-      // F1: the stub answers protocolVersion exactly as the pinned server does (dist/cli.js:605-617), asked of the real server with a key.
+      // F1: the stub answers protocolVersion exactly as the pinned server does (dist/cli.js, noteClientCapabilities), asked of the real server with a key.
       const ci = { name: 't2', version: '0' };
       const versionCases = [
         ...variants.map(([label, params]) => [label, params]),
@@ -996,9 +1054,9 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
     const all = new Set([...walk(baselineDir), ...walk(repo)]);
     const differing = [...all].filter((f) => !fs.existsSync(path.join(baselineDir, f)) || !fs.existsSync(path.join(repo, f)) || !bytes(baselineDir, f).equals(bytes(repo, f))).sort();
     const expected = ['README.md', 'plugins/marrow-cursor/.cursor-plugin/plugin.json', 'plugins/marrow-cursor/scripts/marrow-launch.cjs', 'plugins/marrow-cursor/skills/marrow/SKILL.md',
-      'plugins/marrow/.claude-plugin/plugin.json', 'plugins/marrow/scripts/marrow-launch.cjs', 'plugins/marrow/skills/marrow/SKILL.md',
-      'tools/check.cjs', 'tools/test-launcher-lock.cjs', 'tools/test-launcher-t2.cjs', 'tools/test-launcher.cjs'];
-    result(JSON.stringify(differing) === JSON.stringify(expected), 'T2-13 against be64842b, exactly these files differ: README, both SKILL.md, both plugin.json, both launchers, check.cjs, the three test files', differing.length === expected.length ? `${differing.length} files` : `unexpected: ${differing.filter((f) => !expected.includes(f)).join(',')} missing: ${expected.filter((f) => !differing.includes(f)).join(',')}`);
+      'plugins/marrow/.claude-plugin/plugin.json', 'plugins/marrow/scripts/marrow-launch.cjs', 'plugins/marrow/scripts/marrow-session-check.cjs', 'plugins/marrow/skills/marrow/SKILL.md',
+      'tools/check.cjs', 'tools/test-launcher-lock.cjs', 'tools/test-launcher-t2.cjs', 'tools/test-launcher.cjs', 'tools/test-session-check.cjs'];
+    result(JSON.stringify(differing) === JSON.stringify(expected), 'T2-13 against be64842b, exactly these files differ: README, both SKILL.md, both plugin.json, both launchers, check.cjs, the three test files, and the first-hour session check with its test', differing.length === expected.length ? `${differing.length} files` : `unexpected: ${differing.filter((f) => !expected.includes(f)).join(',')} missing: ${expected.filter((f) => !differing.includes(f)).join(',')}`);
     // No new Windows claim in either direction: existing Windows wording is untouched; the only new line is the placeholder marker.
     const windowsLines = (dir, file) => fs.readFileSync(path.join(dir, file), 'utf8').split('\n').filter((l) => /windows/i.test(l));
     let windowsOk = true;
