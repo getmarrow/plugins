@@ -22,7 +22,8 @@
 // With no Marrow key the pinned server would exit at once, and the host would show the plugin as broken. For the
 // `mcp` argument only, and only when the pinned server's own key check says there is no key, the launcher answers
 // the MCP protocol itself with a server that has no tools (see the keyless stub below). A key anywhere the server reads
-// one, or any doubt, runs the pinned server exactly as before.
+// one, or any doubt, runs the pinned server exactly as before. The stub serves only a real MCP host: a start whose stdin does not
+// open with a valid initialize request gets the pinned server's no-key refusal and exit 1, as before.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -464,6 +465,11 @@ function dataCopy(manifest, install) {
 const ELICITATION_VERSIONS = ['2025-06-18', '2025-11-25']; // dist/cli.js, noteClientCapabilities
 const DEFAULT_MCP_VERSION = '2024-11-05'; // dist/cli.js, noteClientCapabilities
 const MAX_LINE_BYTES = 1024 * 1024;
+// The one refusal text, for every start that is not an MCP host. It is the no-key text of @getmarrow/mcp 3.9.106 under a plugin
+// (PLUGIN_KEY_ERROR in its cli.ts, without the "Get a key" line: this launcher names no npx command). The 3.9.105 server's own text
+// cannot be reused: it names an unpinned npx command and `marrow-mcp setup`, which a plugin must not tell anyone to run.
+const NO_KEY_REFUSAL = 'Error: MARROW_API_KEY required. Marrow plugin: put MARROW_API_KEY in ~/.marrow/env, run chmod 600 ~/.marrow/env, '
+  + 'then /reload-plugins. The seatbelt hooks keep working without a key. Do not run marrow-mcp setup or activate for the plugin.\n';
 const STUB_NOTICE = 'Marrow plugin: no Marrow key on this machine, so the Marrow MCP server started with no tools. The plugin hooks still apply.';
 const STUB_INSTRUCTIONS = 'This Marrow server started without a Marrow key on this machine, so it has no tools. '
   + 'It does not judge, check or record any action. '
@@ -502,30 +508,52 @@ function negotiate(params) {
   return elicits ? requested : DEFAULT_MCP_VERSION;
 }
 
-// Newline-delimited JSON-RPC 2.0 on stdio. Exits 0 when stdin ends.
+// Newline-delimited JSON-RPC 2.0 on stdio. Exits 0 when stdin ends after an initialize, 1 for a start that is not an MCP host
+// (the same guard as @getmarrow/mcp 3.9.106 serveKeylessMcp).
 function serveKeyless(serverVersion) {
   const has = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
   const send = (id, body) => process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id, ...body })}\n`);
   const refuse = (id, code, message) => send(id, { error: { code, message } });
   let initialized = false;
 
+  // Today's no-key exit: the refusal on stderr, nothing on stdout, exit 1.
+  function exitAsNoKey() {
+    try {
+      process.stderr.write(NO_KEY_REFUSAL);
+    } catch {
+      // a closed stderr changes nothing
+    }
+    process.exit(1);
+  }
+
+  // A frame that is not a usable JSON-RPC 2.0 message. Before an initialize it proves the process was not started by an MCP host.
+  function badFrame(id, code, message) {
+    if (!initialized) exitAsNoKey();
+    refuse(id, code, message);
+  }
+
   function handle(text) {
     let msg;
     try {
       msg = JSON.parse(text);
     } catch {
-      return refuse(null, -32700, 'Parse error.');
+      return badFrame(null, -32700, 'Parse error.');
     }
     if (msg === null || typeof msg !== 'object' || Array.isArray(msg) || msg.jsonrpc !== '2.0' || typeof msg.method !== 'string') {
-      return refuse(null, -32600, 'Invalid request.');
+      return badFrame(null, -32600, 'Invalid request.');
     }
     if (!has(msg, 'id')) return undefined; // a notification gets no reply
     const id = msg.id;
     if (!(typeof id === 'string' || id === null || (typeof id === 'number' && Number.isFinite(id)))) {
-      return refuse(null, -32600, 'Invalid request.');
+      return badFrame(null, -32600, 'Invalid request.');
     }
     if (msg.method === 'initialize') {
       initialized = true;
+      try {
+        process.stderr.write(`${STUB_NOTICE}\n`);
+      } catch {
+        // a closed stderr changes nothing
+      }
       return send(id, {
         result: {
           protocolVersion: negotiate(msg.params),
@@ -553,14 +581,14 @@ function serveKeyless(serverVersion) {
     try {
       handle(text);
     } catch {
-      refuse(null, -32603, 'Internal error.');
+      badFrame(null, -32603, 'Internal error.');
     }
   }
 
   let chunks = [];
   let size = 0;
   let skipping = false; // inside a line over the limit: dropped up to the next newline, never buffered
-  process.stdout.on('error', () => process.exit(0));
+  process.stdout.on('error', () => process.exit(initialized ? 0 : 1));
   process.stdin.on('error', () => { process.exitCode = 1; });
   process.stdin.on('data', (chunk) => {
     let from = 0;
@@ -573,7 +601,7 @@ function serveKeyless(serverVersion) {
           skipping = true;
           chunks = [];
           size = 0;
-          refuse(null, -32600, 'Request too large.');
+          badFrame(null, -32600, 'Request too large.');
         } else if (to > from) {
           chunks.push(chunk.subarray(from, to));
         }
@@ -588,12 +616,8 @@ function serveKeyless(serverVersion) {
   });
   process.stdin.on('end', () => {
     if (!skipping) dispatch(chunks);
+    if (!initialized) exitAsNoKey(); // empty stdin, or an end before any initialize: no MCP host ever spoke
   });
-  try {
-    process.stderr.write(`${STUB_NOTICE}\n`);
-  } catch {
-    // a closed stderr changes nothing
-  }
 }
 // ---- keyless MCP stub (end) -------------------------------------------------------------------------
 

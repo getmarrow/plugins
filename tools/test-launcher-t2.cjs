@@ -291,7 +291,7 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
   fs.writeFileSync(path.join(fakeBin, 'npm'), '#!/bin/sh\nexec sleep 1000\n', { mode: 0o755 });
   function slowRun(label, build) {
     const started = Date.now();
-    const { pluginDir, home, extra, node } = build();
+    const { pluginDir, home, extra, node, input = '' } = build();
     return new Promise((resolve) => {
       const child = spawn(node || process.execPath, [path.join(pluginDir, 'scripts', 'marrow-launch.cjs'), 'mcp'], {
         cwd: path.join(home, 'project'), env: envFor(pluginDir, home, extra), stdio: ['pipe', 'pipe', 'pipe'],
@@ -300,7 +300,8 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
       let stderr = '';
       child.stdout.on('data', (c) => { stdout += c; });
       child.stderr.on('data', (c) => { stderr += c; });
-      child.stdin.end();
+      child.stdin.on('error', () => {});
+      child.stdin.end(input);
       child.on('close', (status) => {
         captured.push(stdout, stderr);
         resolve({ label, status, stdout, stderr, ms: Date.now() - started, home, pluginDir });
@@ -323,7 +324,8 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
     const lockDir = path.join(dataOf(home), `${manifestId(pluginDir)}.lock`);
     fs.mkdirSync(lockDir, { recursive: true, mode: 0o700 });
     fs.writeFileSync(path.join(lockDir, 'owner.1'), JSON.stringify({ pid: lockOwner.pid, host: os.hostname(), token: 'slow', created: Date.now() }), { mode: 0o600 });
-    return { pluginDir, home, extra: {} };
+    // Once it holds the lock the start installs and runs the keyless stub, which exits 0 at EOF only after an initialize (the start guard).
+    return { pluginDir, home, extra: {}, input: `${INIT(1)}\n` };
   });
 
   // ---- shared plugin copies ----------------------------------------------------------------------------
@@ -686,15 +688,16 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
     {
       const home = makeHome('t29');
       const big = `${'x'.repeat(1536 * 1024)}\n`;
+      // A bad frame before any initialize now ends the start (T2-14), so the hostile lines follow the initialize; a valid request before it is still answered.
       const lines = [
         `${rpc(10, 'tools/list')}\n`, // before initialize
+        `${INIT(1)}\n`,
         '{not json\n',
         `${JSON.stringify([{ jsonrpc: '2.0', id: 11, method: 'ping' }])}\n`,
         '42\n', 'null\n', '"text"\n', 'true\n',
         `${JSON.stringify({ id: 12, method: 'ping' })}\n`,
         `${JSON.stringify({ jsonrpc: '2.0', id: 13, method: 5 })}\n`,
         `${JSON.stringify({ jsonrpc: '1.0', id: 14, method: 'ping' })}\n`,
-        `${INIT(1)}\n`,
         `${JSON.stringify({ jsonrpc: '2.0', id: { a: 1 }, method: 'ping' })}\n`,
         `${JSON.stringify({ jsonrpc: '2.0', id: [1], method: 'ping' })}\n`,
         `${JSON.stringify({ jsonrpc: '2.0', id: true, method: 'ping' })}\n`,
@@ -1079,10 +1082,149 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
     report.check = { fails, baseFails };
   }
 
+  // ---- T2-14 the start guard: the stub serves only a real MCP host -------------------------------------
+  // The same rows as @getmarrow/mcp 3.9.106 keyless-start (F1). Nothing but a valid initialize REQUEST makes the stub serve: any
+  // other first frame, or an end of stdin before one, is the launcher's one refusal text on stderr, nothing on stdout, exit 1.
+  async function guardRows() {
+    const home = makeHome('t214');
+    const MAX = 1024 * 1024;
+    const NOTICE_LINE = `${STUB_NOTICE} The plugin hooks still apply.\n`;
+    const NOT_INITIALIZED = `${JSON.stringify({ jsonrpc: '2.0', id: 7, error: { code: -32002, message: 'Server not initialized. Send initialize first.' } })}\n`;
+    const feed = (input) => new Promise((resolve) => {
+      const child = spawn(process.execPath, [path.join(plug, 'scripts', 'marrow-launch.cjs'), 'mcp'], {
+        cwd: path.join(home, 'project'), env: envFor(plug, home, {}), stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      let stdout = '';
+      let stderr = '';
+      const timer = setTimeout(() => child.kill('SIGKILL'), 30000);
+      child.stdout.on('data', (c) => { stdout += c; });
+      child.stderr.on('data', (c) => { stderr += c; });
+      child.stdin.on('error', () => {});
+      child.on('close', (status, signal) => {
+        clearTimeout(timer);
+        captured.push(stdout, stderr);
+        resolve({ status, signal, stdout, stderr });
+      });
+      child.stdin.end(input);
+    });
+    // One refusal text. It is the 3.9.106 plugin no-key text (PLUGIN_KEY_ERROR) without its "Get a key" line; the 3.9.105 server's own text
+    // names an unpinned npx command and `marrow-mcp setup`, which tools/check.cjs keeps out of this launcher. The pinned server with
+    // no key still ends the start the same way (exit 1, nothing on stdout): only the stderr wording differs.
+    const refusal = 'Error: MARROW_API_KEY required. Marrow plugin: put MARROW_API_KEY in ~/.marrow/env, run chmod 600 ~/.marrow/env, '
+      + 'then /reload-plugins. The seatbelt hooks keep working without a key. Do not run marrow-mcp setup or activate for the plugin.\n';
+    const server = direct(plug, { home });
+    result(server.status === 1 && server.stdout === '' && server.stderr.includes(REQUIRED_LINE), 'T2-14 oracle: the pinned server with no key exits 1 with nothing on stdout (the exit the stub gives a non-MCP start)', `exit ${server.status}`);
+    const launcherSource = fs.readFileSync(path.join(plug, 'scripts', 'marrow-launch.cjs'), 'utf8');
+    const launcherCode = launcherSource.replace(/^\s*\/\/.*$/gm, '');
+    result((launcherCode.match(/MARROW_API_KEY required/g) || []).length === 1 && !/npx|@latest|--package=/.test(launcherCode), 'T2-14 the launcher holds the refusal text once (one constant, one text) and no npx or unpinned spec');
+
+    const hookPayloads = [
+      ['Claude PreToolUse hook payload', JSON.stringify({ session_id: 's', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' }, cwd: '/x' })],
+      ['Cursor beforeShellExecution hook payload', JSON.stringify({ conversation_id: 'c', hook_event_name: 'beforeShellExecution', command: 'ls', cwd: '/x', workspace_roots: ['/x'] })],
+      ['hook payload that carries a jsonrpc field and no method', JSON.stringify({ jsonrpc: '2.0', hook_event_name: 'PreToolUse', tool_name: 'Bash' })],
+    ].map(([name, line]) => [name, `${line}\n`]);
+    const refused = [
+      ...hookPayloads,
+      ['empty stdin', ''],
+      ['blank lines only', '\n\n\n'],
+      ['whitespace only', ' \t \r\n  \n'],
+      ['garbage line, then a valid initialize', `not json\n${INIT(1)}\n`],
+      ['hook payload, then a valid initialize', `${hookPayloads[0][1]}${INIT(1)}\n`],
+      ['truncated first frame, no newline', INIT(1).slice(0, 40)],
+      ['binary bytes', Buffer.from([0xff, 0xfe, 0x00, 0x01, 0x80, 0x0a])],
+      ['binary bytes, then a valid initialize', Buffer.concat([Buffer.from([0xff, 0xfe, 0x00, 0x80, 0x0a]), Buffer.from(`${INIT(1)}\n`)])],
+      ['NUL padding before a valid initialize', `${'\u0000'.repeat(64)}${INIT(1)}\n`],
+      ['UTF-8 BOM before a valid initialize', Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(`${INIT(1)}\n`)])],
+      ['JSON array (batch) holding an initialize', `[${INIT(1)}]\n`],
+      ['JSON scalar', '42\n'],
+      ['JSON null', 'null\n'],
+      ['jsonrpc 1.0 initialize', `${JSON.stringify({ jsonrpc: '1.0', id: 1, method: 'initialize', params: {} })}\n`],
+      ['initialize without jsonrpc', `${JSON.stringify({ id: 1, method: 'initialize', params: {} })}\n`],
+      ['method is not a string', `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 5 })}\n`],
+      ['no method', `${JSON.stringify({ jsonrpc: '2.0', id: 1 })}\n`],
+      ['initialize with an object id', `${JSON.stringify({ jsonrpc: '2.0', id: {}, method: 'initialize', params: {} })}\n`],
+      ['initialize with a boolean id', `${JSON.stringify({ jsonrpc: '2.0', id: true, method: 'initialize', params: {} })}\n`],
+      ['initialize with an array id', `${JSON.stringify({ jsonrpc: '2.0', id: [1], method: 'initialize', params: {} })}\n`],
+      ['initialize notification (no id), then EOF', `${JSON.stringify({ jsonrpc: '2.0', method: 'initialize', params: {} })}\n`],
+      ['initialized notification only', `${NOTIFIED}\n`],
+      ['oversize first line, then a valid initialize', `${'x'.repeat(MAX + 1)}\n${INIT(1)}\n`],
+      ['oversize first line, no newline, then EOF', 'x'.repeat(MAX + 10)],
+      ['oversize JSON first line', `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"pad":"${'x'.repeat(MAX)}"}}\n`],
+    ];
+    const wrong = [];
+    for (const [name, input] of refused) {
+      const r = await feed(input);
+      if (!(r.status === 1 && r.stdout === '' && r.stderr === refusal)) wrong.push(`${name}: exit ${r.status}${r.signal ? ` ${r.signal}` : ''}, stdout ${r.stdout.length}B, stderr ${r.stderr === refusal ? 'is the refusal' : `${r.stderr.length}B`}`);
+    }
+    result(wrong.length === 0, `T2-14 guard: ${refused.length} starts that are not a valid initialize request (hook payloads, empty stdin, garbage, binary, BOM, NUL, oversize, bad id, wrong jsonrpc, batch, notification) exit 1, nothing on stdout, stderr is the one refusal text`, wrong.join('; '));
+
+    // A valid request other than initialize still gets -32002 and serving goes on, but it is not an initialize: EOF after it is exit 1.
+    const early = [
+      ['ping before initialize, then EOF', `${rpc(7, 'ping')}\n`],
+      ['tools/list before initialize, then EOF', `${rpc(7, 'tools/list')}\n`],
+      ['tools/call before initialize, then EOF', `${rpc(7, 'tools/call', { name: 'marrow_agent_runtime', arguments: {} })}\n`],
+    ];
+    const wrongEarly = [];
+    for (const [name, input] of early) {
+      const r = await feed(input);
+      if (!(r.status === 1 && r.stdout === NOT_INITIALIZED && r.stderr === refusal)) wrongEarly.push(`${name}: exit ${r.status}, stdout ${JSON.stringify(r.stdout.slice(0, 80))}`);
+    }
+    result(wrongEarly.length === 0, 'T2-14 guard: a request before initialize gets the -32002 line, and EOF after it is exit 1 with the refusal', wrongEarly.join('; '));
+
+    const initResult = (m) => m && m.result && m.result.serverInfo && m.result.serverInfo.name === 'marrow' && JSON.stringify(m.result.capabilities) === '{"tools":{"listChanged":false}}';
+    const served = [
+      ['valid initialize, then EOF', `${INIT(1)}\n`, 1],
+      ['CRLF initialize', `${INIT(1)}\r\n`, 1],
+      ['initialize with no trailing newline, then EOF', INIT(1), 1],
+      ['blank lines, then initialize', `\n\n  \n${INIT(1)}\n`, 1],
+      ['initialize with a string id', `${rpc('abc', 'initialize', { protocolVersion: '2025-06-18', capabilities: {} })}\n`, 1],
+      ['initialize with a null id', `${JSON.stringify({ jsonrpc: '2.0', id: null, method: 'initialize', params: {} })}\n`, 1],
+      ['initialize with no params', `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`, 1],
+      ['ping before initialize, then initialize, then EOF', `${rpc(7, 'ping')}\n${INIT(1)}\n`, 2],
+      ['initialize, then a hook payload, then EOF', `${INIT(1)}\n${hookPayloads[0][1]}`, 2],
+      ['initialize, then garbage, then EOF', `${INIT(1)}\ngarbage\n`, 2],
+      ['initialize, then an oversize line, then a ping', `${INIT(1)}\n${'x'.repeat(MAX + 1)}\n${rpc(2, 'ping')}\n`, 3],
+      ['initialize, then binary bytes, then a ping', Buffer.concat([Buffer.from(`${INIT(1)}\n`), Buffer.from([0xff, 0xfe, 0x00, 0x0a]), Buffer.from(`${rpc(2, 'ping')}\n`)]), 3],
+    ];
+    const wrongServed = [];
+    for (const [name, input, lines] of served) {
+      const r = await feed(input);
+      const { messages, bad } = parseLines(r.stdout);
+      const init = messages.find((m) => initResult(m));
+      if (!(r.status === 0 && bad === 0 && messages.length === lines && init && r.stderr === NOTICE_LINE)) {
+        wrongServed.push(`${name}: exit ${r.status}, ${messages.length}/${lines} lines, init ${Boolean(init)}, stderr ${r.stderr === NOTICE_LINE ? 'is the notice' : `${r.stderr.length}B`}`);
+      }
+    }
+    result(wrongServed.length === 0, `T2-14 guard: ${served.length} starts with a valid initialize request (CRLF, no newline, blank lines, any id type, junk after it) are served, the notice is the only stderr, EOF is exit 0`, wrongServed.join('; '));
+    {
+      const r = await feed(`${INIT(1)}\n${'x'.repeat(MAX + 1)}\n${rpc(2, 'ping')}\n`);
+      const { messages } = parseLines(r.stdout);
+      result(messages.length === 3 && messages[1].error && messages[1].error.code === -32600 && messages[1].id === null && JSON.stringify(messages[2]) === JSON.stringify({ jsonrpc: '2.0', id: 2, result: {} }),
+        'T2-14 guard: after an initialize an oversize line is a -32600 reply and the next line is still served');
+    }
+    {
+      const r = await feed(`${INIT(1)}\n${hookPayloads[0][1]}`);
+      const { messages } = parseLines(r.stdout);
+      result(messages.length === 2 && messages[1].error && messages[1].error.code === -32600, 'T2-14 guard: after an initialize a hook payload is a -32600 reply, not an exit');
+    }
+    {
+      // The guard must not leak the refusal into a served run, nor the notice into a refused one.
+      const ok = await feed(`${INIT(1)}\n`);
+      const no = await feed('');
+      result(!ok.stderr.includes('is required') && !no.stderr.includes(STUB_NOTICE) && no.stdout === '', 'T2-14 guard: a served run never prints the refusal, a refused run never prints the notice or anything on stdout');
+    }
+    {
+      // Closed stdin from a host that spawns and drops the pipe is the same as an empty stdin.
+      const r = launch(plug, ['mcp'], { home, input: '' });
+      result(r.status === 1 && r.stdout === '' && r.stderr === refusal, 'T2-14 guard: closed stdin through spawnSync is exit 1 with the refusal');
+    }
+  }
+
   async function finish() {
     try {
       integrity();
       await main();
+      await guardRows();
     } finally {
       if (process.env.T2_REPORT_DIR) {
         fs.mkdirSync(process.env.T2_REPORT_DIR, { recursive: true });
