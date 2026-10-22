@@ -12,7 +12,7 @@ Each plugin governs its own host only. The Claude Code plugin does not govern Cu
 
 The Claude Code and Cursor plugins run `@getmarrow/mcp` 3.9.105, which includes the free keyless seatbelt: with no account and no key, their hooks stop seven kinds of action (see "Without a key: the keyless seatbelt" below). With an account, Marrow holds risky actions for approval and keeps the audit trail. The Codex plugins pin `@getmarrow/mcp` 3.9.102 and do not include the keyless seatbelt; it comes to them with the next update.
 
-**Windows:** Marrow's hooks do not work on native Windows yet: every action is blocked. Use WSL, or wait for the fix.
+**Windows:** Native Windows is not supported yet. Use WSL.
 
 ## Install in Claude Code
 
