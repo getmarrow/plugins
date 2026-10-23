@@ -1,8 +1,8 @@
 {
   "schema": "marrow-plugin-mcp-manifest.v1",
   "mcp": {
-    "version": "3.9.105",
-    "integrity": "sha512-coU1B1ee2AG0MQ6zgzmwj2IllqnpOQYwyihWTtG7rM67hnelMGHF0fY5Z7Rd2acFH4hw96yr73yaDraEkeht3w=="
+    "version": "3.9.106",
+    "integrity": "sha512-B7j4eCpzzU1qEv4SewO4Dj4MMPQmLgjgJa9z1LpciS20g7+IhVVQFqYUjVbklJAnJBpUl0+7FLbjOC9nYdjcGQ=="
   },
   "sdk": {
     "version": "3.7.67",
@@ -12,6 +12,10 @@
   "files": [
     "@getmarrow/mcp/LICENSE",
     "@getmarrow/mcp/README.md",
+    "@getmarrow/mcp/dist/approval-reply.d.ts",
+    "@getmarrow/mcp/dist/approval-reply.d.ts.map",
+    "@getmarrow/mcp/dist/approval-reply.js",
+    "@getmarrow/mcp/dist/approval-reply.js.map",
     "@getmarrow/mcp/dist/cli.d.ts",
     "@getmarrow/mcp/dist/cli.d.ts.map",
     "@getmarrow/mcp/dist/cli.js",
@@ -92,6 +96,10 @@
     "@getmarrow/mcp/dist/index.d.ts.map",
     "@getmarrow/mcp/dist/index.js",
     "@getmarrow/mcp/dist/index.js.map",
+    "@getmarrow/mcp/dist/keyless-server.d.ts",
+    "@getmarrow/mcp/dist/keyless-server.d.ts.map",
+    "@getmarrow/mcp/dist/keyless-server.js",
+    "@getmarrow/mcp/dist/keyless-server.js.map",
     "@getmarrow/mcp/dist/lifecycle-spool.d.ts",
     "@getmarrow/mcp/dist/lifecycle-spool.d.ts.map",
     "@getmarrow/mcp/dist/lifecycle-spool.js",
@@ -132,6 +140,14 @@
     "@getmarrow/mcp/dist/seatbelt/classifier-pin.d.ts.map",
     "@getmarrow/mcp/dist/seatbelt/classifier-pin.js",
     "@getmarrow/mcp/dist/seatbelt/classifier-pin.js.map",
+    "@getmarrow/mcp/dist/seatbelt/env-dump.d.ts",
+    "@getmarrow/mcp/dist/seatbelt/env-dump.d.ts.map",
+    "@getmarrow/mcp/dist/seatbelt/env-dump.js",
+    "@getmarrow/mcp/dist/seatbelt/env-dump.js.map",
+    "@getmarrow/mcp/dist/seatbelt/fallback-copy.d.ts",
+    "@getmarrow/mcp/dist/seatbelt/fallback-copy.d.ts.map",
+    "@getmarrow/mcp/dist/seatbelt/fallback-copy.js",
+    "@getmarrow/mcp/dist/seatbelt/fallback-copy.js.map",
     "@getmarrow/mcp/dist/seatbelt/guards.d.ts",
     "@getmarrow/mcp/dist/seatbelt/guards.d.ts.map",
     "@getmarrow/mcp/dist/seatbelt/guards.js",
@@ -258,9 +274,9 @@
     "@getmarrow/sdk/dist/types.js.map",
     "@getmarrow/sdk/package.json"
   ],
-  "sha256": "c0bdd9cdff4e3bafd9798c4479ab3455e5d4c4dadfc7303f2404220a985dc9f6",
+  "sha256": "dcc0e11bd60326a2e58ae318a617206513cfae3ec116168033a860418ac21fc0",
   "source": {
     "repository": "getmarrow/marrow-mcp",
-    "commit": "8ffda0034d8b2590e8b7996b7be01debf1bd64f0"
+    "commit": "b8973d3a6aa1e2a85a7aa4ac09801d6842f98661"
   }
 }
