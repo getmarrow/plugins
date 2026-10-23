@@ -11,7 +11,9 @@
 //   * npm installs use npm_config_cache from the parent (a cache seeded with the pinned tarballs keeps them offline).
 // Differential rows (T2-4, T2-10, T2-13) compare against the baseline commit be64842b: set T2_BASELINE_DIR to an extracted tree
 // of it, or leave it unset and the rows extract T2_BASELINE_REF (default: be64842b) with `git archive`. Without a baseline
-// those rows fail loudly.
+// those rows fail loudly. T2-13 also compares against PREPIN_REF, the commit just before the 3.9.106 pin commit (no override).
+// The baseline's pinned server is 3.9.105. The pinned server of this tree is 3.9.106: where the two differ the rows name the
+// 3.9.106 behaviour as measured from the pinned tarball (keyless start, refusal text), they never assume it.
 // Optional T2_REPORT_DIR: a JSON file with the matrices and texts of the run is written there.
 const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
@@ -20,15 +22,56 @@ const path = require('path');
 const crypto = require('crypto');
 
 const BASELINE_REF = process.env.T2_BASELINE_REF || 'be64842b6120af91edc44854569124b38730614f';
+// The commit before the 3.9.106 pin commit (the pre-pin tip). T2-13: the pin commit moved the files named in PIN_FILES and nothing else.
+const PREPIN_REF = 'ccbe0c329365e8903e8c2b9227e2c17050e512f9';
+const PINNED_VERSION = '3.9.106'; // @getmarrow/mcp as pinned by this tree
+const BASELINE_VERSION = '3.9.105'; // @getmarrow/mcp as pinned by be64842b
 const DEAD_URL = 'https://127.0.0.1:9';
-const REQUIRED_LINE = 'MARROW_API_KEY environment variable is required';
+// What the be64842b server (3.9.105) prints on a refused start; the oracle's "printed the required line" test.
+const BASELINE_REQUIRED_LINE = 'MARROW_API_KEY environment variable is required';
+// The 3.9.106 server's no-key refusal, whole stderr, measured from the pinned tarball (dist/cli.js serverKeyRequiredText). In the Claude plugin
+// (CLAUDE_PLUGIN_ROOT set) it is PLUGIN_KEY_ERROR + GET_A_KEY_LINE; Cursor sets no CLAUDE_PLUGIN_ROOT, so it gets the plain text with
+// the resolver's exactFix. The T2-14 oracle row checks that these strings are in the pinned dist.
+const GET_A_KEY_URL = 'https://getmarrow.ai/signup';
+const GET_A_KEY_LINE = `Get a key: ${GET_A_KEY_URL}. Day-one steps and commands: npx @getmarrow/mcp --help`;
+const PLUGIN_KEY_STEPS = 'Marrow plugin: put MARROW_API_KEY in ~/.marrow/env, run chmod 600 ~/.marrow/env, then /reload-plugins. The seatbelt hooks keep working without a key. Do not run marrow-mcp setup or activate for the plugin.';
+const NO_KEY_FIX = 'Create an API key at https://getmarrow.ai, then export MARROW_API_KEY from trusted secret storage or place it in ~/.marrow/env with owner-only permissions before running npx -y --package=@getmarrow/mcp@latest marrow-mcp setup.';
+const REQUIRED_LINE_CLAUDE = `Error: MARROW_API_KEY required. ${PLUGIN_KEY_STEPS}\n${GET_A_KEY_LINE}\n`;
+const REQUIRED_LINE_CURSOR = `Error: MARROW_API_KEY environment variable is required\n${NO_KEY_FIX}\n${GET_A_KEY_LINE}\n`;
+// The 3.9.106 keyless server's own notice (dist/keyless-server.js KEYLESS_NOTICE): it tells a real server run from the launcher's stub.
+const SERVER_KEYLESS_NOTICE = 'Marrow: no Marrow key on this machine, so the Marrow MCP server started with no tools. Marrow hooks, where they are set up, keep their free keyless seatbelt.';
+// The files the 3.9.106 pin commit moved against PREPIN_REF, each named, plus the one test file this row lives in (moved by the test commit).
+// Any other file moving fails T2-13.
+const PIN_FILES = [
+  '.claude-plugin/marketplace.json',
+  '.cursor-plugin/marketplace.json',
+  'README.md',
+  'plugins/marrow-cursor/.cursor-plugin/plugin.json',
+  'plugins/marrow-cursor/README.md',
+  'plugins/marrow-cursor/package-lock.json',
+  'plugins/marrow-cursor/package.json',
+  'plugins/marrow-cursor/scripts/mcp-manifest.json',
+  'plugins/marrow-cursor/skills/marrow/SKILL.md',
+  'plugins/marrow/.claude-plugin/plugin.json',
+  'plugins/marrow/package-lock.json',
+  'plugins/marrow/package.json',
+  'plugins/marrow/scripts/mcp-manifest.json',
+  'plugins/marrow/skills/marrow/SKILL.md',
+  'tools/mcp-pins/SOURCE.md',
+];
+const TEST_COMMIT_FILES = ['tools/test-launcher-t2.cjs'];
+// The only places a server's stdout carries its own version: result.serverInfo.version of the initialize answer and the two client_update
+// fields of the log notification. T2-4 normalizes exactly these paths, each only when it equals the pinned version string.
+const VERSION_PATHS = [['result', 'serverInfo', 'version'], ['params', 'data', 'client_update', 'installed_version'], ['params', 'data', 'client_update', 'latest_version']];
+const VERSION_TOKEN = '<pinned-version>';
 const STUB_NOTICE = 'Marrow plugin: no Marrow key on this machine, so the Marrow MCP server started with no tools.';
 const DENY_WORDS = /allow|approv|permit|grant|authori[sz]|proceed|decision|safe to/i;
 const POSIX = process.platform !== 'win32';
 
 function start({ host, repo, result: countRow }) {
   const CURSOR = host === 'cursor';
-  const source = path.join(repo, 'plugins', CURSOR ? 'marrow-cursor' : 'marrow');
+  const REQUIRED_LINE = CURSOR ? REQUIRED_LINE_CURSOR : REQUIRED_LINE_CLAUDE;
+  const source =path.join(repo, 'plugins', CURSOR ? 'marrow-cursor' : 'marrow');
   const rootVar = CURSOR ? 'CURSOR_PLUGIN_ROOT' : 'CLAUDE_PLUGIN_ROOT';
   const work = fs.mkdtempSync(path.join(os.tmpdir(), `marrow-t2-${host}-`));
   const cache = process.env.npm_config_cache || path.join(work, 'npm-cache');
@@ -181,7 +224,117 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
   };
 }
 `);
+  // Records, never blocks: every connect, lookup, http(s)/fetch request, child process and file-changing call of the process, to T2_COUNT_LOG.
+  // (The T2-7 GUARD above refuses instead; this one measures a server whose own behaviour is the thing under test.)
+  const COUNT = preload('count.cjs', `'use strict';
+const fs = require('fs');
+const net = require('net');
+const dns = require('dns');
+const cp = require('child_process');
+const http = require('http');
+const https = require('https');
+const http2 = require('http2');
+const tls = require('tls');
+const writeLog = fs.writeFileSync;
+const log = process.env.T2_COUNT_LOG;
+const counts = { connect: 0, lookup: 0, request: 0, fetch: 0, spawn: 0, fsWrite: [] };
+const wrap = (obj, name, fn) => {
+  const original = obj[name];
+  if (typeof original !== 'function') return;
+  obj[name] = function counted(...args) { fn(args); return original.apply(this, args); };
+};
+wrap(net.Socket.prototype, 'connect', () => { counts.connect += 1; });
+for (const name of ['lookup', 'resolve', 'resolve4', 'resolve6']) wrap(dns, name, () => { counts.lookup += 1; });
+for (const mod of [http, https, http2, tls]) for (const name of ['request', 'get', 'connect']) wrap(mod, name, () => { counts.request += 1; });
+for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']) wrap(cp, name, () => { counts.spawn += 1; });
+if (typeof globalThis.fetch === 'function') {
+  const original = globalThis.fetch;
+  globalThis.fetch = function counted(...args) { counts.fetch += 1; return original.apply(this, args); };
+}
+const changing = ['writeFile', 'appendFile', 'createWriteStream', 'mkdir', 'rename', 'copyFile', 'unlink', 'rm', 'rmdir', 'symlink', 'chmod', 'utimes', 'truncate', 'link', 'mkdtemp'];
+for (const name of changing) {
+  wrap(fs, name, (args) => { counts.fsWrite.push(name); });
+  wrap(fs, name + 'Sync', () => { counts.fsWrite.push(name + 'Sync'); });
+  wrap(fs.promises, name, () => { counts.fsWrite.push('promises.' + name); });
+}
+const writes = (flags) => (typeof flags === 'string' && /[wa+]/.test(flags)) || (typeof flags === 'number' && (flags & 3) !== 0);
+for (const name of ['open', 'openSync']) wrap(fs, name, (args) => { if (writes(args[1])) counts.fsWrite.push(name); });
+wrap(fs.promises, 'open', (args) => { if (writes(args[1])) counts.fsWrite.push('promises.open'); });
+process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
+`);
   const nodeOptions = (...files) => ({ NODE_OPTIONS: files.map((f) => `--require=${f}`).join(' ') });
+  // The numbers COUNT recorded for one run: all four network counters and the child-process counter must be 0 for a run that owes nothing.
+  const countsOf = (file) => {
+    try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+  };
+  const noActivity = (c) => c !== null && c.connect === 0 && c.lookup === 0 && c.request === 0 && c.fetch === 0 && c.spawn === 0;
+  // Paths, modes, sizes and mtimes of everything under the given folders (an unreadable folder is listed as such), for before/after proofs.
+  const treeSnapshot = (...dirs) => {
+    const lines = [];
+    const walk = (base, d) => {
+      let names;
+      try { names = fs.readdirSync(d).sort(); } catch { lines.push(`${path.relative(base, d)} <unreadable>`); return; }
+      for (const name of names) {
+        const full = path.join(d, name);
+        const st = fs.lstatSync(full);
+        lines.push(`${path.relative(base, full)} ${(st.mode & 0o7777).toString(8)} ${st.size} ${st.mtimeMs}`);
+        if (st.isDirectory()) walk(base, full);
+      }
+    };
+    for (const dir of dirs) { lines.push(`# ${path.basename(dir)}`); walk(dir, dir); }
+    return lines.join('\n');
+  };
+  // The files under the given folders whose bytes hold the dummy key (an unreadable file holds none we can see).
+  const filesWithKey = (...dirs) => {
+    const found = [];
+    const needle = Buffer.from(KEY);
+    const walk = (d) => {
+      let names;
+      try { names = fs.readdirSync(d).sort(); } catch { return; }
+      for (const name of names) {
+        const full = path.join(d, name);
+        const st = fs.lstatSync(full);
+        if (st.isDirectory()) walk(full);
+        else if (st.isFile() && st.size <= 4 * 1024 * 1024) {
+          try { if (fs.readFileSync(full).includes(needle)) found.push(full); } catch { /* unreadable */ }
+        }
+      }
+    };
+    for (const dir of dirs) walk(dir);
+    return found.sort();
+  };
+  // T2-4 byte equality against the baseline: stdout is compared line by line after exactly three JSON paths (VERSION_PATHS) are
+  // replaced by VERSION_TOKEN, each only when its value equals the side's pinned version string exactly. Every line must be the compact
+  // JSON the server writes (JSON.stringify of itself), so re-serializing loses nothing. No wildcard, no regex, no other masking.
+  const normalizeVersions = (stdout, version) => {
+    const lines = stdout.split('\n');
+    const paths = [];
+    const out = lines.map((line, index) => {
+      if (line === '') return line;
+      let value;
+      try { value = JSON.parse(line); } catch { return line; }
+      if (JSON.stringify(value) !== line) return line;
+      for (const keys of VERSION_PATHS) {
+        let holder = value;
+        for (const key of keys.slice(0, -1)) holder = holder && typeof holder === 'object' ? holder[key] : undefined;
+        const last = keys[keys.length - 1];
+        if (holder && typeof holder === 'object' && Object.prototype.hasOwnProperty.call(holder, last) && holder[last] === version) {
+          holder[last] = VERSION_TOKEN;
+          paths.push(`#${index}/${keys.join('/')}`);
+        }
+      }
+      return JSON.stringify(value);
+    });
+    return { text: out.join('\n'), paths };
+  };
+  // Same status, same stderr, stdout equal after normalizeVersions on each side with its own pinned version, and the same set of
+  // normalized paths on both sides (so a version value can not have moved to another place).
+  const sameApartFromVersions = (baseline, candidate, baselineVersion = BASELINE_VERSION, candidateVersion = PINNED_VERSION) => {
+    const b = normalizeVersions(baseline.stdout, baselineVersion);
+    const c = normalizeVersions(candidate.stdout, candidateVersion);
+    return baseline.status === candidate.status && baseline.stderr === candidate.stderr && b.text === c.text
+      && b.paths.length > 0 && JSON.stringify(b.paths) === JSON.stringify(c.paths);
+  };
 
   // ---- running the launcher -----------------------------------------------------------------------------
   const take = (r) => {
@@ -268,6 +421,8 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
   const isRpc = (m) => m && typeof m === 'object' && m.jsonrpc === '2.0' && Object.prototype.hasOwnProperty.call(m, 'id')
     && (Object.prototype.hasOwnProperty.call(m, 'result') !== Object.prototype.hasOwnProperty.call(m, 'error'));
   const MCP_INPUT = `${[INIT(1), NOTIFIED, rpc(2, 'tools/list')].join('\n')}\n`;
+  // MCP_INPUT plus a tools/call: the keyless oracle asks the pinned server for a tool it must not have.
+  const KEYLESS_INPUT = `${[INIT(1), NOTIFIED, rpc(2, 'tools/list'), rpc(3, 'tools/call', { name: 'marrow_agent_runtime', arguments: {} })].join('\n')}\n`;
 
   // ---- baseline (be64842b) ------------------------------------------------------------------------------
   let baselineDir = process.env.T2_BASELINE_DIR || '';
@@ -280,6 +435,16 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
     if (archive.status === 0 && untar.status === 0) baselineDir = dir; else baselineError = `git archive ${BASELINE_REF.slice(0, 8)} failed`;
   }
   const baselineSource = baselineDir ? path.join(baselineDir, 'plugins', CURSOR ? 'marrow-cursor' : 'marrow') : '';
+  // ---- the commit before the pin commit (ccbe0c32), for T2-13 -------------------------------------------
+  let prepinDir = '';
+  let prepinError = '';
+  {
+    const dir = path.join(work, 'prepin');
+    fs.mkdirSync(dir);
+    const archive = spawnSync('git', ['-C', repo, 'archive', PREPIN_REF], { maxBuffer: 256 * 1024 * 1024 });
+    const untar = archive.status === 0 ? spawnSync('tar', ['-x', '-C', dir], { input: archive.stdout }) : { status: 1 };
+    if (archive.status === 0 && untar.status === 0) prepinDir = dir; else prepinError = `git archive ${PREPIN_REF.slice(0, 8)} failed`;
+  }
 
   // ---- slow rows, started now and collected in finish() -------------------------------------------------
   // They wait out the launcher's real 120 s npm timeout and 150 s lock wait, so they run beside everything else.
@@ -385,10 +550,54 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
     // T2-4 equivalence matrix
     {
       const states = [];
-      // The refused-owner-file states below (620, 644, 000, symlinks, group-writable folders) serve the stub with the pinned 3.9.105 env.js, which does not
-      // report ownerFileRefused. From 3.9.106 the resolver reports it and keyless() runs the server instead (T2-4c); move those rows to the server when the pin moves.
-      // `fleet`: a MARROW_KEY_<NAME> variable is set. The pinned server treats it as a key (exit 1, "required"), so the stub must not hide that text: server, not stub.
-      const add = (name, prep, flags = {}) => states.push({ name, prep, ...flags });
+      // Every state has an explicit kind: what the launcher does with it and what the pinned 3.9.106 server does, never inferred from the oracle.
+      //   keyless: a clear "no key". The launcher serves the stub (T2-4c: keyless() true). The pinned server, started directly, answers keyless:
+      //     0 tools, a tools/call error, no request, no file written (measured here from the pinned tarball). be64842b (3.9.105) exited 1 with its "required" line.
+      //   fleet:   a MARROW_KEY_<NAME> variable is set. It is no usable key, but it is a doubt: the server runs (never the stub) and refuses, exit 1.
+      //   refused: an owner key file the resolver refused (620, 644, 000, symlinks, group-writable folders, FIFO, directory; ownerFileRefused from 3.9.106).
+      //     keyless() is false (T2-4c), so the server runs, with no key: the key in the file is never accepted, exit 1, nothing sent, nothing echoed.
+      //   keyed:   a key (or key-shaped value) the server accepts: the real server runs and its bytes equal be64842b apart from the three version fields.
+      //   badurl:  no key but a base URL the server refuses: the real server crashes, as be64842b does.
+      const KIND = {
+        none: 'keyless',
+        'empty MARROW_API_KEY': 'keyless',
+        'whitespace-only MARROW_API_KEY': 'keyed',
+        'dummy key in env': 'keyed',
+        'MARROW_KEY alias': 'keyed',
+        'garbage key in env (invalid format)': 'keyed',
+        'garbage key in env file 600': 'keyed',
+        'env file 600, dir 700': 'keyed',
+        'env.local file 600': 'keyed',
+        'env file with CRLF, comments, export, quotes': 'keyed',
+        'env file: key line commented out': 'keyless',
+        'env file empty value': 'keyless',
+        'FLEET_AGENT_ID set, no key': 'keyless',
+        'AGENT_ID + per-agent key vars, no direct key': 'fleet',
+        'per-agent key var alone, no agent id': 'fleet',
+        'per-agent key var, lowercase suffix': 'fleet',
+        'per-agent key var empty (an empty slot is no key)': 'keyless',
+        'project .env with a key (never read as a key)': 'keyless',
+        'MARROW_BASE_URL http (invalid), no key': 'badurl',
+        'MARROW_BASE_URL https custom, no key': 'keyless',
+        'MARROW_BASE_URL with credentials, no key': 'badurl',
+        'MARROW_BASE_URL unparsable, no key': 'badurl',
+        'env file group-writable (620)': 'refused',
+        'env file world-readable (644)': 'refused',
+        'env file unreadable (000)': 'refused',
+        'env file symlinked': 'refused',
+        '~/.marrow symlinked folder': 'refused',
+        '~/.marrow dir 755, file 600': 'keyed',
+        '~/.marrow dir 775 (group-writable), file 600': 'refused',
+        'HOME group-writable (770), file 600': 'refused',
+        'env file is a FIFO': 'refused',
+        'env file is a directory': 'refused',
+        'HOME is an unreadable folder (000)': 'keyless',
+        "HOME is another account's folder (/root)": 'keyless',
+      };
+      const add = (name, prep) => {
+        if (!KIND[name]) throw new Error('T2-4 state without an explicit kind: ' + name);
+        states.push({ name, prep, kind: KIND[name] });
+      };
       add('none', () => ({}));
       add('empty MARROW_API_KEY', () => ({ extra: { MARROW_API_KEY: '' } }));
       add('whitespace-only MARROW_API_KEY', () => ({ extra: { MARROW_API_KEY: '   ', ...keyed } }));
@@ -408,9 +617,9 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
       add('env file: key line commented out', (h) => { ownerFile(h, 'env', [`#MARROW_API_KEY=${KEY}`, `MARROW_BASE_URL=${DEAD_URL}`]); return {}; });
       add('env file empty value', (h) => { ownerFile(h, 'env', ['MARROW_API_KEY=']); return {}; });
       add('FLEET_AGENT_ID set, no key', () => ({ extra: { MARROW_FLEET_AGENT_ID: 'agent-t2' } }));
-      add('AGENT_ID + per-agent key vars, no direct key', () => ({ extra: { MARROW_AGENT_ID: 'a1', MARROW_AGENT_ID_X: 'a1', MARROW_KEY_X: KEY } }), { fleet: true });
-      add('per-agent key var alone, no agent id', () => ({ extra: { MARROW_KEY_X: KEY } }), { fleet: true });
-      add('per-agent key var, lowercase suffix', () => ({ extra: { MARROW_KEY_x: KEY } }), { fleet: true });
+      add('AGENT_ID + per-agent key vars, no direct key', () => ({ extra: { MARROW_AGENT_ID: 'a1', MARROW_AGENT_ID_X: 'a1', MARROW_KEY_X: KEY } }));
+      add('per-agent key var alone, no agent id', () => ({ extra: { MARROW_KEY_X: KEY } }));
+      add('per-agent key var, lowercase suffix', () => ({ extra: { MARROW_KEY_x: KEY } }));
       add('per-agent key var empty (an empty slot is no key)', () => ({ extra: { MARROW_KEY_X: '' } }));
       add('project .env with a key (never read as a key)', (h) => { fs.writeFileSync(path.join(h, 'project', '.env'), `MARROW_API_KEY=${KEY}\n`, { mode: 0o600 }); return {}; });
       add('MARROW_BASE_URL http (invalid), no key', () => ({ extra: { MARROW_BASE_URL: 'http://127.0.0.1:9' } }));
@@ -452,45 +661,118 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
         add('HOME is another account\'s folder (/root)', (h) => (fs.existsSync('/root') ? { home: '/root', cwd: h } : null));
       }
       const rows = [];
+      // The crash the badurl states print: the same statement in each pinned dist (3.9.105 line 565, 3.9.106 line 603). The frames are equal once
+      // each side's exact position (dist/cli.js:565:54, dist/cli.js:603:58) is read as that statement; the test reads the statement from both
+      // dists, so a frame that moved is measured, not assumed.
+      const distLine = (dir, line) => (fs.readFileSync(path.join(dir, 'node_modules', '@getmarrow', 'mcp', 'dist', 'cli.js'), 'utf8').split('\n')[line - 1] || '');
+      const CRASH_STATEMENT = '(0, index_1.validateBaseUrl)(rawBaseUrl)';
+      const crashFramesOk = Boolean(baselinePlug) && distLine(baselinePlug, 565).includes(CRASH_STATEMENT) && distLine(plug, 603).includes(CRASH_STATEMENT);
+      // A crash prints a stack trace that names the plugin folder and the launcher's own frames (line numbers); only those and the pinned frame differ.
+      const crashText = (t, pinned) => t.replace(/plugin-\d+/g, 'plugin-#').replace(/marrow-launch\.cjs:\d+:\d+/g, 'marrow-launch.cjs:#:#')
+        .split(pinned ? 'dist/cli.js:603:58' : 'dist/cli.js:565:54').join('dist/cli.js:#:#');
+      const KIND_TEXT = {
+        keyless: 'the stub runs (be64842b printed the "required" line) and the pinned 3.9.106 server, started directly, answers keyless: 0 tools, a tools/call error, no request, no file written',
+        fleet: 'the server (never the stub) runs and refuses: exit 1, nothing on stdout, the exact 3.9.106 refusal, no request, no key echoed',
+        refused: 'the server (never the stub) runs with no key: exit 1, nothing on stdout, the exact 3.9.106 refusal, no request, the refused file\'s key in no stream and in no new file',
+        keyed: 'the real server runs and its bytes equal be64842b\'s apart from the three exact version fields (3.9.105 to 3.9.106)',
+        badurl: 'the real server runs and crashes as be64842b does: exit 1, nothing on stdout, the same stack apart from the plugin folder and the two pinned frame positions',
+      };
+      // The exact refusal. Cursor sets no CLAUDE_PLUGIN_ROOT, so for a refused owner file its server adds one line, 'Ignored the Marrow key in <file>: <why>',
+      // whose file path and reason are the state's own; every other line is exact.
+      const refusalText = (text, refusedFile) => {
+        if (!CURSOR || !refusedFile) return text === REQUIRED_LINE;
+        const lines = text.split('\n');
+        return lines.length === 5 && lines[0] === 'Error: MARROW_API_KEY environment variable is required' && lines[1] === NO_KEY_FIX
+          && lines[2].startsWith('Ignored the Marrow key in ') && lines[3] === GET_A_KEY_LINE && lines[4] === '';
+      };
       let n = 0;
       for (const state of states) {
         n += 1;
+        const { kind } = state;
         const home = makeHome(`t24-${n}`);
         const prepared = state.prep(home);
         if (prepared === null) continue;
         const useHome = prepared.home || home;
-        const run = (fn, dir) => fn(dir, { home: useHome, cwd: prepared.cwd || path.join(home, 'project'), input: MCP_INPUT, extra: { ...nodeOptions(NETGUARD), ...(prepared.extra || {}) } });
-        const cand = run((dir, o) => launch(dir, ['mcp'], o), plug);
+        const keyFilesBefore = filesWithKey(home);
+        const counted = (label) => path.join(work, `count-t24-${n}-${label}.json`);
+        const run = (fn, dir, { input = MCP_INPUT, count = '' } = {}) => fn(dir, {
+          home: useHome, cwd: prepared.cwd || path.join(home, 'project'), input,
+          extra: { ...nodeOptions(NETGUARD, ...(count ? [COUNT] : [])), ...(count ? { T2_COUNT_LOG: count } : {}), ...(prepared.extra || {}) },
+        });
+        const serverRun = kind === 'fleet' || kind === 'refused';
+        const cand = run((dir, o) => launch(dir, ['mcp'], o), plug, { count: serverRun ? counted('cand') : '' });
         const stub = cand.stderr.includes(STUB_NOTICE);
-        const directB = run(direct, plug);
         const oracleA = baselinePlug ? run((dir, o) => launch(dir, ['mcp'], o), baselinePlug) : null;
-        const printed = (r) => r.stderr.includes(REQUIRED_LINE) && r.status === 1;
-        const row = {
-          state: state.name,
-          oracle: oracleA ? printed(oracleA) : null,
-          oracleStatus: oracleA ? oracleA.status : null,
-          direct: printed(directB),
-          candidate: stub ? 'stub' : 'server',
-          candidateStatus: cand.status,
-        };
-        row.pass = oracleA !== null && (stub === (row.oracle && !state.fleet)) && (row.direct === row.oracle);
-        if (!stub && oracleA) {
-          // The real server path: the candidate must equal be64842b (bytes, apart from fields two baseline runs already disagree on).
+        const printed = (r) => r.stderr.includes(BASELINE_REQUIRED_LINE) && r.status === 1;
+        const messages = (r) => parseLines(r.stdout).messages;
+        const toolCount = (r) => { const m = messages(r).find((x) => x.id === 2); return m && m.result && Array.isArray(m.result.tools) ? m.result.tools.length : -1; };
+        const nothingEchoed = (...rs) => rs.every((r) => !(r.stdout + r.stderr).includes(KEY));
+        const checks = {};
+        // The launcher's choice, explicit per state (T2-4c holds the decision table), and the measured be64842b behaviour it is tied to.
+        checks.launcherChoice = oracleA !== null && stub === (kind === 'keyless');
+        checks.baselinePrinted = oracleA !== null && printed(oracleA) === (kind === 'keyless' || kind === 'fleet' || kind === 'refused');
+        if (oracleA !== null && kind === 'keyless') {
+          const log = counted('direct');
+          const before = treeSnapshot(home, plug);
+          const d = run(direct, plug, { input: KEYLESS_INPUT, count: log });
+          const after = treeSnapshot(home, plug);
+          const dm = messages(d);
+          const byId = (id) => dm.find((m) => m.id === id) || {};
+          const c = countsOf(log);
+          checks.stubServes = cand.status === 0 && messages(cand).length === 2 && toolCount(cand) === 0;
+          checks.pinnedKeyless = d.status === 0 && dm.length === 3 && dm.every(isRpc) && Boolean(byId(1).result) && byId(1).result.serverInfo.version === PINNED_VERSION
+            && toolCount(d) === 0 && Boolean(byId(3).error) && byId(3).result === undefined && byId(3).error.code === -32602 && byId(3).error.message === 'This server has no tools.'
+            && d.stderr.split('\n')[0] === SERVER_KEYLESS_NOTICE;
+          checks.pinnedSentNothing = noActivity(c);
+          checks.pinnedWroteNothing = c !== null && c.fsWrite.length === 0 && before === after;
+          checks.keyNotEchoed = nothingEchoed(cand, d);
+        } else if (oracleA !== null && serverRun) {
+          const log = counted('direct');
+          const d = run(direct, plug, { count: log });
+          checks.pinnedRefuses = d.status === 1 && d.stdout === '' && refusalText(d.stderr, kind === 'refused');
+          checks.candidateIsThePinnedServer = cand.status === d.status && cand.stdout === d.stdout && cand.stderr === d.stderr;
+          checks.sentNothing = noActivity(countsOf(log)) && noActivity(countsOf(counted('cand')));
+          checks.keyNeverAccepted = cand.stdout === '' && d.stdout === '' && toolCount(cand) === -1 && nothingEchoed(cand, d)
+            && JSON.stringify(filesWithKey(home)) === JSON.stringify(keyFilesBefore);
+        } else if (oracleA !== null && kind === 'keyed') {
+          const d = run(direct, plug);
           const again = run((dir, o) => launch(dir, ['mcp'], o), baselinePlug);
-          const v = compare(state.name, oracleA, again, cand);
-          // A crash prints a stack trace that names the launcher's own frames (line numbers) and the plugin folder; only those differ.
-          const frames = (t) => t.replace(/plugin-\d+/g, 'plugin-#').replace(/marrow-launch\.cjs:\d+:\d+/g, 'marrow-launch.cjs:#:#');
-          const sameCrash = cand.status === oracleA.status && cand.stdout === oracleA.stdout && frames(cand.stderr) === frames(oracleA.stderr);
-          row.sameAsBaseline = v.verdict !== 'DIFFERENT' || sameCrash;
-          if (v.verdict === 'masked') row.masked = v.fields;
-          if (v.verdict === 'DIFFERENT' && sameCrash) row.masked = ['stderr: launcher frame line numbers and plugin folder in a crash stack trace'];
-          row.pass = row.pass && row.sameAsBaseline;
+          checks.baselineRanTheServer = oracleA.status === 0 && toolCount(oracleA) > 0 && !printed(oracleA);
+          checks.baselineIsRepeatable = again.status === oracleA.status && again.stdout === oracleA.stdout && again.stderr === oracleA.stderr;
+          checks.sameAsBaseline = sameApartFromVersions(oracleA, cand);
+          checks.sameToolCount = toolCount(cand) > 0 && toolCount(cand) === toolCount(oracleA);
+          checks.directIsTheCandidate = d.status === cand.status && d.stdout === cand.stdout && d.stderr === cand.stderr && d.stderr !== REQUIRED_LINE;
+        } else if (oracleA !== null && kind === 'badurl') {
+          const d = run(direct, plug);
+          checks.baselineCrashed = oracleA.status === 1 && oracleA.stdout === '' && !printed(oracleA);
+          checks.sameCrash = crashFramesOk && cand.status === oracleA.status && cand.stdout === oracleA.stdout && crashText(cand.stderr, true) === crashText(oracleA.stderr, false);
+          checks.directCrashes = d.status === 1 && d.stdout === '' && d.stderr !== REQUIRED_LINE && d.stderr.includes('MARROW_BASE_URL');
         }
+        const failed = Object.keys(checks).filter((k) => !checks[k]);
+        const row = { state: state.name, kind, oracle: oracleA ? printed(oracleA) : null, candidate: stub ? 'stub' : 'server', candidateStatus: cand.status, assertions: Object.keys(checks).length, failed, pass: oracleA !== null && failed.length === 0 };
         rows.push(row);
-        result(row.pass, `T2-4 [${n}] ${state.name}: ${state.fleet ? 'the server (not the stub) runs and prints the "required" line, as be64842b' : 'stub iff be64842b printed the "required" line'}`, `oracle ${row.oracle === null ? 'n/a' : row.oracle ? 'printed it' : 'did not'}, direct ${row.direct ? 'printed it' : 'did not'}, candidate ${row.candidate}${row.sameAsBaseline === undefined ? '' : row.sameAsBaseline ? ', identical to baseline' : ', DIFFERS from baseline'}`);
+        result(row.pass, `T2-4 [${n}] ${state.name}: ${KIND_TEXT[kind]}`, `${kind}; baseline ${row.oracle === null ? 'n/a' : row.oracle ? 'printed the required line' : 'ran or crashed'}, candidate ${row.candidate}, exit ${cand.status}, ${row.assertions} checks${failed.length ? `, failed: ${failed.join(',')}` : ''}`);
       }
       report.t24 = rows;
-      result(rows.length >= 12 && rows.some((r) => r.candidate === 'stub') && rows.some((r) => r.candidate === 'server'), 'T2-4 the matrix has at least 12 states and exercises both outcomes', `${rows.length} states`);
+      // The version normalizer, on made-up streams: only the three exact paths with the exact version strings are masked; a look-alike
+      // version, a version at any other path, any other changed byte, a non-canonical line, a changed exit or stderr all fail.
+      const normalizerSelfTest = () => {
+        const init = (v, extra = {}) => JSON.stringify({ jsonrpc: '2.0', id: 1, result: { protocolVersion: '2024-11-05', serverInfo: { name: 'marrow', version: v }, ...extra } });
+        const note = (installed, latest) => JSON.stringify({ jsonrpc: '2.0', method: 'notifications/message', params: { data: { client_update: { installed_version: installed, latest_version: latest } } } });
+        const stream = (v, other = {}, i = v, l = v) => ({ status: 0, stderr: '', stdout: `${init(v, other)}\n${note(i, l)}\n` });
+        const base = stream(BASELINE_VERSION);
+        const good = stream(PINNED_VERSION);
+        const same = (a, b) => sameApartFromVersions(a, b);
+        return same(base, good)
+          && !same(base, stream('3.9.1060')) && !same(base, stream('v3.9.106')) && !same(base, stream('3.9.106 ')) && !same(base, stream('3.9.107'))
+          && !same(base, stream(PINNED_VERSION, {}, '3.9.1060', PINNED_VERSION)) && !same(base, stream(PINNED_VERSION, {}, PINNED_VERSION, 'v3.9.106'))
+          && !same(base, stream(PINNED_VERSION, {}, BASELINE_VERSION, PINNED_VERSION)) && !same(stream('3.9.104'), good)
+          && !same(stream(BASELINE_VERSION, { other: BASELINE_VERSION }), stream(PINNED_VERSION, { other: PINNED_VERSION }))
+          && !same(base, stream(PINNED_VERSION, { extra: 1 })) && !same(base, { ...good, stdout: good.stdout.replace('"name":"marrow"', '"name":"marrow2"') })
+          && !same(base, { ...good, stdout: good.stdout.replace('"id":1', '"id": 1') }) && !same(base, { ...good, stdout: good.stdout.slice(0, -1) })
+          && !same(base, { ...good, status: 1 }) && !same(base, { ...good, stderr: 'x' });
+      };
+      result(rows.length >= 12 && rows.some((r) => r.candidate === 'stub') && rows.some((r) => r.candidate === 'server') && normalizerSelfTest(), 'T2-4 the matrix has at least 12 states and exercises both outcomes, and the version normalizer refuses look-alike versions, other paths and any other changed byte', `${rows.length} states`);
     }
 
     // T2-4b the resolver is loaded only from a verified copy: a planted env.js in a tampered copy never runs
@@ -559,8 +841,15 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
     // T2-5 resolver throws: today's path, never the stub
     {
       const once = makeHome('t25-once');
-      const rOnce = launch(plug, ['mcp'], { home: once, input: MCP_INPUT, extra: { ...nodeOptions(THROW), T2_THROW: 'once' } });
-      result(rOnce.status === 1 && rOnce.stdout === '' && rOnce.stderr.includes(REQUIRED_LINE) && !rOnce.stderr.includes(STUB_NOTICE), 'T2-5 resolver throws once (the launcher\'s call): keyless runs the real server, which exits 1 with the "required" line, no stub');
+      const onceExtra = { ...nodeOptions(THROW), T2_THROW: 'once' };
+      const rOnce = launch(plug, ['mcp'], { home: once, input: MCP_INPUT, extra: onceExtra });
+      // The same throw, but not an MCP start (stdin ends before any initialize): the real server refuses with its own exact 3.9.106 text.
+      const rOnceEof = launch(plug, ['mcp'], { home: makeHome('t25-once-eof'), input: '', extra: onceExtra });
+      const onceMessages = parseLines(rOnce.stdout).messages;
+      result(rOnceEof.status === 1 && rOnceEof.stdout === '' && rOnceEof.stderr === REQUIRED_LINE && !rOnceEof.stderr.includes(STUB_NOTICE)
+        && rOnce.status === 0 && onceMessages.length === 2 && onceMessages.every(isRpc) && onceMessages[0].result.serverInfo.version === PINNED_VERSION && onceMessages[1].result.tools.length === 0
+        && rOnce.stderr.split('\n')[0] === SERVER_KEYLESS_NOTICE && !rOnce.stderr.includes(STUB_NOTICE),
+      'T2-5 resolver throws once (the launcher\'s call): keyless runs the real 3.9.106 server, never the stub: it answers keyless with its own notice (0 tools), and a start that is not an MCP host exits 1 with exactly the 3.9.106 "required" text');
       const always = makeHome('t25-always');
       const rAlways = launch(plug, ['mcp'], { home: always, input: MCP_INPUT, extra: { ...nodeOptions(THROW), T2_THROW: 'always' } });
       const pristineAlways = baselinePlug ? launch(baselinePlug, ['mcp'], { home: always, input: MCP_INPUT, extra: { ...nodeOptions(THROW), T2_THROW: 'always' } }) : null;
@@ -600,7 +889,7 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
         const oldHome = makeHome('t26-old');
         const oldBefore = snap(oldHome);
         const o = launch(baselinePlug, ['mcp'], { home: oldHome, input: MCP_INPUT });
-        result(o.status === 1 && o.stderr.includes(REQUIRED_LINE) && snap(oldHome) === oldBefore, 'T2-6 be64842b\'s keyless mcp start also left HOME untouched, so the stub changes nothing the hooks can see', `exit ${o.status}`);
+        result(o.status === 1 && o.stderr.includes(BASELINE_REQUIRED_LINE) && snap(oldHome) === oldBefore, 'T2-6 be64842b\'s keyless mcp start also left HOME untouched, so the stub changes nothing the hooks can see', `exit ${o.status}`);
       }
     }
 
@@ -1043,11 +1332,37 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
         if (fs.existsSync(path.join(baselineDir, plug, f))) files.push(path.join(plug, f));
       }
     }
-    const moved = files.filter((f) => !bytes(baselineDir, f).equals(bytes(repo, f)));
-    const allowedMoved = ['plugins/marrow/scripts/marrow-launch.cjs', 'plugins/marrow-cursor/scripts/marrow-launch.cjs'];
-    result(moved.every((f) => allowedMoved.includes(f)) && moved.length === 2, 'T2-13 against be64842b, every package.json, package-lock.json, mcp-manifest.json, hooks.json and every Codex file is byte-identical; only the two launchers moved', `${files.length} files compared, moved: ${moved.join(',')}`);
-    const sha = (dir) => JSON.parse(bytes(dir, 'plugins', 'marrow', 'scripts', 'mcp-manifest.json')).sha256;
-    result(sha(baselineDir) === sha(repo), 'T2-13 the mcp-manifest sha256 is unchanged');
+    if (!prepinDir) { result(false, 'T2-13 the pre-pin commit (ccbe0c32) is available for the moved-files comparison', prepinError); return; }
+    // The pin commit moved the pin files and nothing else. Against ccbe0c32 exactly the six pin files among those compared moved (both package.json,
+    // both package-lock.json, both mcp-manifest.json); no launcher, hooks.json or Codex file moved. Against be64842b those six and the two launchers.
+    const LAUNCHERS = ['plugins/marrow/scripts/marrow-launch.cjs', 'plugins/marrow-cursor/scripts/marrow-launch.cjs'];
+    const pinCompared = PIN_FILES.filter((f) => files.includes(f));
+    const movedFrom = (dir) => files.filter((f) => !fs.existsSync(path.join(dir, f)) || !bytes(dir, f).equals(bytes(repo, f)));
+    const sameSet = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+    const moved = movedFrom(prepinDir);
+    const movedOld = movedFrom(baselineDir);
+    result(pinCompared.length === 6 && sameSet(moved, pinCompared) && sameSet(movedOld, [...LAUNCHERS, ...pinCompared]),
+      'T2-13 against ccbe0c32, of every package.json, package-lock.json, mcp-manifest.json, launcher, hooks.json and Codex file only the six pin files moved (both package.json, both package-lock.json, both mcp-manifest.json); against be64842b those six and the two launchers', `${files.length} files compared, moved since ccbe0c32: ${moved.length}, since be64842b: ${movedOld.length}`);
+    // The manifest hash moved with the pin, and it is the tree hash of what a clean install of the pinned tarballs holds: recomputed here from the
+    // verified install in the plugin copy (every file, sorted, name and bytes with NUL separators), not read from the manifest.
+    const manifestOf = (dir, plugin) => JSON.parse(bytes(dir, plugin, 'scripts', 'mcp-manifest.json'));
+    const installedFiles = (base, rel = '') => fs.readdirSync(path.join(base, rel), { withFileTypes: true })
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+      .flatMap((e) => {
+        const r = rel ? `${rel}/${e.name}` : e.name;
+        if (r === '.bin' || r === '.package-lock.json') return [];
+        return e.isDirectory() ? installedFiles(base, r) : [r];
+      });
+    const nodeModules = path.join(plug, 'node_modules');
+    const installed = installedFiles(nodeModules);
+    const treeHash = crypto.createHash('sha256');
+    for (const f of installed) { treeHash.update(f); treeHash.update('\0'); treeHash.update(fs.readFileSync(path.join(nodeModules, f))); treeHash.update('\0'); }
+    const manifestNow = manifestOf(repo, 'plugins/marrow');
+    const manifestWas = manifestOf(prepinDir, 'plugins/marrow');
+    result(manifestNow.sha256 !== manifestWas.sha256 && manifestNow.sha256 === treeHash.digest('hex') && JSON.stringify(manifestNow.files) === JSON.stringify(installed)
+      && bytes(repo, 'plugins/marrow/scripts/mcp-manifest.json').equals(bytes(repo, 'plugins/marrow-cursor/scripts/mcp-manifest.json'))
+      && manifestNow.mcp.version === PINNED_VERSION && manifestWas.mcp.version === BASELINE_VERSION,
+    'T2-13 the mcp-manifest sha256 moved with the pin: it differs from ccbe0c32, equals the tree hash recomputed from the installed pinned tarballs (same file list), and both plugins carry the same manifest', `${installed.length} files`);
     // The files that differ from the baseline are exactly the expected ones.
     const walk = (dir, rel = '') => fs.readdirSync(path.join(dir, rel), { withFileTypes: true }).flatMap((e) => {
       const r = rel ? `${rel}/${e.name}` : e.name;
@@ -1059,7 +1374,13 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
     const expected = ['README.md', 'plugins/marrow-cursor/.cursor-plugin/plugin.json', 'plugins/marrow-cursor/scripts/marrow-launch.cjs', 'plugins/marrow-cursor/skills/marrow/SKILL.md',
       'plugins/marrow/.claude-plugin/plugin.json', 'plugins/marrow/scripts/marrow-launch.cjs', 'plugins/marrow/scripts/marrow-session-check.cjs', 'plugins/marrow/skills/marrow/SKILL.md',
       'tools/check.cjs', 'tools/test-launcher-lock.cjs', 'tools/test-launcher-t2.cjs', 'tools/test-launcher.cjs', 'tools/test-session-check.cjs'];
-    result(JSON.stringify(differing) === JSON.stringify(expected), 'T2-13 against be64842b, exactly these files differ: README, both SKILL.md, both plugin.json, both launchers, check.cjs, the three test files, and the first-hour session check with its test', differing.length === expected.length ? `${differing.length} files` : `unexpected: ${differing.filter((f) => !expected.includes(f)).join(',')} missing: ${expected.filter((f) => !differing.includes(f)).join(',')}`);
+    const differingFrom = (dir) => [...new Set([...walk(dir), ...walk(repo)])].filter((f) => !fs.existsSync(path.join(dir, f)) || !fs.existsSync(path.join(repo, f)) || !bytes(dir, f).equals(bytes(repo, f))).sort();
+    const differingPrepin = differingFrom(prepinDir);
+    const expectedPrepin = [...PIN_FILES, ...TEST_COMMIT_FILES].sort();
+    const expectedOld = [...new Set([...expected, ...PIN_FILES])].sort();
+    const list = (got, want) => (got.length === want.length ? `${got.length} files` : '') + (JSON.stringify(got) === JSON.stringify(want) ? '' : ` unexpected: ${got.filter((f) => !want.includes(f)).join(',')} missing: ${want.filter((f) => !got.includes(f)).join(',')}`);
+    result(JSON.stringify(differingPrepin) === JSON.stringify(expectedPrepin) && JSON.stringify(differing) === JSON.stringify(expectedOld),
+      'T2-13 exactly these files differ: against ccbe0c32 the 15 pin files named in PIN_FILES (both package.json, package-lock.json, mcp-manifest.json, plugin.json, SKILL.md and marketplace.json, both READMEs, tools/mcp-pins/SOURCE.md) and this test file, nothing else; against be64842b the same fri-train set as before plus the nine more pin files', `since ccbe0c32: ${list(differingPrepin, expectedPrepin)}; since be64842b: ${list(differing, expectedOld)}`);
     // No new Windows claim in either direction: existing Windows wording is untouched, except the one README line that was
     // replaced by the exact public line (ed81aa6a); the only other new line is the placeholder marker.
     const WINDOWS_WAS = '**Windows:** Marrow\'s hooks do not work on native Windows yet: every action is blocked. Use WSL, or wait for the fix.';
@@ -1083,8 +1404,15 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
       swaps += publicLines.length;
     }
     result(windowsOk && markers === 1 && swaps === 1, 'T2-13 Windows wording: the one be64842b README Windows line is replaced by exactly the public line (whole line "**Windows:** Native Windows is not supported yet. Use WSL."), every other existing line kept byte for byte; the only other new Windows line is the WINDOWS-STATUS placeholder comment', `${markers} marker, ${swaps} public line`);
-    const dep = (dir) => JSON.stringify(JSON.parse(bytes(dir, 'plugins', 'marrow', 'package.json')).dependencies);
-    result(dep(baselineDir) === dep(repo), 'T2-13 plugin dependencies are unchanged');
+    const depsOf = (dir, plugin) => JSON.parse(bytes(dir, plugin, 'package.json')).dependencies;
+    const lockMcp = (dir, plugin) => JSON.parse(bytes(dir, plugin, 'package-lock.json')).packages['node_modules/@getmarrow/mcp'].version;
+    const depsNow = depsOf(repo, 'plugins/marrow');
+    const depsWas = depsOf(prepinDir, 'plugins/marrow');
+    const apartFromMcp = (d) => JSON.stringify(Object.entries(d).filter(([k]) => k !== '@getmarrow/mcp'));
+    result(depsNow['@getmarrow/mcp'] === PINNED_VERSION && depsWas['@getmarrow/mcp'] === BASELINE_VERSION && apartFromMcp(depsNow) === apartFromMcp(depsWas)
+      && Object.keys(depsNow).length === Object.keys(depsWas).length && JSON.stringify(depsOf(repo, 'plugins/marrow-cursor')) === JSON.stringify(depsNow)
+      && lockMcp(repo, 'plugins/marrow') === PINNED_VERSION && lockMcp(repo, 'plugins/marrow-cursor') === PINNED_VERSION,
+    'T2-13 plugin dependencies: only @getmarrow/mcp moved, from 3.9.105 to exactly 3.9.106 (both package.json and both lockfiles), the SDK and every other dependency are unchanged');
     const check = spawnSync(process.execPath, [path.join(repo, 'tools', 'check.cjs')], { cwd: repo, encoding: 'utf8', env: env() });
     const fails = (check.stdout || '').split('\n').filter((l) => l.startsWith('FAIL')).map((l) => l.replace(/:.*/, ''));
     const baseCheck = spawnSync(process.execPath, [path.join(baselineDir, 'tools', 'check.cjs')], { cwd: baselineDir, encoding: 'utf8', env: env() });
@@ -1125,7 +1453,16 @@ for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execF
       + 'To connect an account, create an agent key at https://getmarrow.ai, put MARROW_API_KEY in ~/.marrow/env, run chmod 600 ~/.marrow/env, '
       + 'then restart Claude Code or Cursor. The plugin hooks still apply without a key. Do not run marrow-mcp setup or activate for the plugin.\n';
     const server = direct(plug, { home });
-    result(server.status === 1 && server.stdout === '' && server.stderr.includes(REQUIRED_LINE), 'T2-14 oracle: the pinned server with no key exits 1 with nothing on stdout (the exit the stub gives a non-MCP start)', `exit ${server.status}`);
+    // The refusal text is measured from the pinned tarball: the strings below are in its dist, and its output equals them whole.
+    const pinnedDist = (name) => fs.readFileSync(path.join(plug, 'node_modules', '@getmarrow', 'mcp', 'dist', name), 'utf8');
+    const textsInPack = pinnedDist('cli.js').includes(`const PLUGIN_KEY_STEPS = '${PLUGIN_KEY_STEPS}';`)
+      && pinnedDist('cli.js').includes(`const GET_A_KEY_URL = '${GET_A_KEY_URL}';`)
+      && pinnedDist('cli.js').includes('const GET_A_KEY_LINE = `Get a key: ${GET_A_KEY_URL}. Day-one steps and commands: npx @getmarrow/mcp --help`;')
+      && pinnedDist('cli.js').includes('const PLUGIN_KEY_ERROR = `Error: MARROW_API_KEY required. ${PLUGIN_KEY_STEPS}`;')
+      && pinnedDist('cli.js').includes('return `${fix}\\n${GET_A_KEY_LINE}\\n`;')
+      && pinnedDist('env.js').includes(`'${NO_KEY_FIX}'`)
+      && pinnedDist('keyless-server.js').includes(`exports.KEYLESS_NOTICE = '${SERVER_KEYLESS_NOTICE}';`);
+    result(server.status === 1 && server.stdout === '' && server.stderr === REQUIRED_LINE && textsInPack, 'T2-14 oracle: the pinned server with no key exits 1 with nothing on stdout and exactly the 3.9.106 refusal text, which is in the pinned dist (the exit the stub gives a non-MCP start)', `exit ${server.status}`);
     const launcherSource = fs.readFileSync(path.join(plug, 'scripts', 'marrow-launch.cjs'), 'utf8');
     const launcherCode = launcherSource.replace(/^\s*\/\/.*$/gm, '');
     result((launcherCode.match(/MARROW_API_KEY required/g) || []).length === 1 && !/npx|@latest|--package=/.test(launcherCode), 'T2-14 the launcher holds the refusal text once (one constant, one text) and no npx or unpinned spec');
