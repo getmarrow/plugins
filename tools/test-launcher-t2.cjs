@@ -36,6 +36,10 @@ const GET_A_KEY_URL = 'https://getmarrow.ai/signup';
 const GET_A_KEY_LINE = `Get a key: ${GET_A_KEY_URL}. Day-one steps and commands: npx @getmarrow/mcp --help`;
 const PLUGIN_KEY_STEPS = 'Marrow plugin: put MARROW_API_KEY in ~/.marrow/env, run chmod 600 ~/.marrow/env, then /reload-plugins. The seatbelt hooks keep working without a key. Do not run marrow-mcp setup or activate for the plugin.';
 const NO_KEY_FIX = 'Create an API key at https://getmarrow.ai, then export MARROW_API_KEY from trusted secret storage or place it in ~/.marrow/env with owner-only permissions before running npx -y --package=@getmarrow/mcp@latest marrow-mcp setup.';
+// The launcher's own refusal for a fleet key (MARROW_KEY_<NAME>) with no MARROW_API_KEY (the `mcp` argument only): exit 1 like the pinned server, but its text, with no npx and no unpinned spec.
+const FLEET_REFUSAL = 'Error: MARROW_API_KEY required. Marrow plugin: a fleet key (MARROW_KEY_<NAME>) is set but MARROW_API_KEY is not, and the Marrow MCP server needs MARROW_API_KEY, so it did not start. '
+  + 'To connect an account, create an agent key at https://getmarrow.ai, put MARROW_API_KEY in ~/.marrow/env, run chmod 600 ~/.marrow/env, '
+  + 'then restart Claude Code or Cursor. The plugin hooks still apply without a key. Do not run marrow-mcp setup or activate for the plugin.\n';
 const REQUIRED_LINE_CLAUDE = `Error: MARROW_API_KEY required. ${PLUGIN_KEY_STEPS}\n${GET_A_KEY_LINE}\n`;
 const REQUIRED_LINE_CURSOR = `Error: MARROW_API_KEY environment variable is required\n${NO_KEY_FIX}\n${GET_A_KEY_LINE}\n`;
 // The 3.9.106 keyless server's own notice (dist/keyless-server.js KEYLESS_NOTICE): it tells a real server run from the launcher's stub.
@@ -60,6 +64,17 @@ const PIN_FILES = [
   'tools/mcp-pins/SOURCE.md',
 ];
 const TEST_COMMIT_FILES = ['tools/test-launcher-t2.cjs'];
+// The base of the session-notice branch (the plugins final, pinned to MCP 3.9.106) and every file that branch moved against it: the launcher's
+// fleet-key refusal (both copies), the session check's notice, and the checks and tests that hold them. T2-13 names them so nothing else moves quietly.
+const NOTICE_BASE_REF = '5c657b1c959846161a21b2c2dff43e86ba52b786';
+const BRANCH_FILES = [
+  'plugins/marrow-cursor/scripts/marrow-launch.cjs',
+  'plugins/marrow/scripts/marrow-launch.cjs',
+  'plugins/marrow/scripts/marrow-session-check.cjs',
+  'tools/check.cjs',
+  'tools/test-launcher-t2.cjs',
+  'tools/test-session-check.cjs',
+];
 // The only places a server's stdout carries its own version: result.serverInfo.version of the initialize answer and the two client_update
 // fields of the log notification. T2-4 normalizes exactly these paths, each only when it equals the pinned version string.
 const VERSION_PATHS = [['result', 'serverInfo', 'version'], ['params', 'data', 'client_update', 'installed_version'], ['params', 'data', 'client_update', 'latest_version']];
@@ -446,6 +461,17 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
     if (archive.status === 0 && untar.status === 0) prepinDir = dir; else prepinError = `git archive ${PREPIN_REF.slice(0, 8)} failed`;
   }
 
+  // ---- the base of the session-notice branch (5c657b1c), for T2-13 ---------------------------------------
+  let noticeBaseDir = '';
+  let noticeBaseError = '';
+  {
+    const dir = path.join(work, 'notice-base');
+    fs.mkdirSync(dir);
+    const archive = spawnSync('git', ['-C', repo, 'archive', NOTICE_BASE_REF], { maxBuffer: 256 * 1024 * 1024 });
+    const untar = archive.status === 0 ? spawnSync('tar', ['-x', '-C', dir], { input: archive.stdout }) : { status: 1 };
+    if (archive.status === 0 && untar.status === 0) noticeBaseDir = dir; else noticeBaseError = `git archive ${NOTICE_BASE_REF.slice(0, 8)} failed`;
+  }
+
   // ---- slow rows, started now and collected in finish() -------------------------------------------------
   // They wait out the launcher's real 120 s npm timeout and 150 s lock wait, so they run beside everything else.
   const noNpmNode = path.join(work, 'nonpm', 'bin', 'node');
@@ -553,7 +579,8 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
       // Every state has an explicit kind: what the launcher does with it and what the pinned 3.9.106 server does, never inferred from the oracle.
       //   keyless: a clear "no key". The launcher serves the stub (T2-4c: keyless() true). The pinned server, started directly, answers keyless:
       //     0 tools, a tools/call error, no request, no file written (measured here from the pinned tarball). be64842b (3.9.105) exited 1 with its "required" line.
-      //   fleet:   a MARROW_KEY_<NAME> variable is set. It is no usable key, but it is a doubt: the server runs (never the stub) and refuses, exit 1.
+      //   fleet:   a MARROW_KEY_<NAME> variable is set and no direct key. It is no usable key and never the stub's case. The launcher refuses with FLEET_REFUSAL
+      //     (exit 1, nothing on stdout, nothing started): the pinned server would exit 1 too, but with its own text, which names unpinned npx commands.
       //   refused: an owner key file the resolver refused (620, 644, 000, symlinks, group-writable folders, FIFO, directory; ownerFileRefused from 3.9.106).
       //     keyless() is false (T2-4c), so the server runs, with no key: the key in the file is never accepted, exit 1, nothing sent, nothing echoed.
       //   keyed:   a key (or key-shaped value) the server accepts: the real server runs and its bytes equal be64842b apart from the three version fields.
@@ -576,6 +603,11 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
         'per-agent key var alone, no agent id': 'fleet',
         'per-agent key var, lowercase suffix': 'fleet',
         'per-agent key var empty (an empty slot is no key)': 'keyless',
+        'per-agent key var named PROD (misleading word)': 'fleet',
+        'per-agent key var named TEST (misleading word)': 'fleet',
+        'two per-agent key vars, one empty one set': 'fleet',
+        'per-agent key var + MARROW_API_KEY empty': 'fleet',
+        'per-agent key var + dummy MARROW_API_KEY': 'keyed',
         'project .env with a key (never read as a key)': 'keyless',
         'MARROW_BASE_URL http (invalid), no key': 'badurl',
         'MARROW_BASE_URL https custom, no key': 'keyless',
@@ -621,6 +653,11 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
       add('per-agent key var alone, no agent id', () => ({ extra: { MARROW_KEY_X: KEY } }));
       add('per-agent key var, lowercase suffix', () => ({ extra: { MARROW_KEY_x: KEY } }));
       add('per-agent key var empty (an empty slot is no key)', () => ({ extra: { MARROW_KEY_X: '' } }));
+      add('per-agent key var named PROD (misleading word)', () => ({ extra: { MARROW_KEY_PROD: KEY } }));
+      add('per-agent key var named TEST (misleading word)', () => ({ extra: { MARROW_KEY_TEST: KEY } }));
+      add('two per-agent key vars, one empty one set', () => ({ extra: { MARROW_KEY_A: '', MARROW_KEY_B: KEY } }));
+      add('per-agent key var + MARROW_API_KEY empty', () => ({ extra: { MARROW_KEY_X: KEY, MARROW_API_KEY: '' } }));
+      add('per-agent key var + dummy MARROW_API_KEY', () => ({ extra: { MARROW_KEY_X: KEY, MARROW_API_KEY: KEY, ...keyed } }));
       add('project .env with a key (never read as a key)', (h) => { fs.writeFileSync(path.join(h, 'project', '.env'), `MARROW_API_KEY=${KEY}\n`, { mode: 0o600 }); return {}; });
       add('MARROW_BASE_URL http (invalid), no key', () => ({ extra: { MARROW_BASE_URL: 'http://127.0.0.1:9' } }));
       add('MARROW_BASE_URL https custom, no key', () => ({ extra: { MARROW_BASE_URL: DEAD_URL } }));
@@ -672,7 +709,7 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
         .split(pinned ? 'dist/cli.js:603:58' : 'dist/cli.js:565:54').join('dist/cli.js:#:#');
       const KIND_TEXT = {
         keyless: 'the stub runs (be64842b printed the "required" line) and the pinned 3.9.106 server, started directly, answers keyless: 0 tools, a tools/call error, no request, no file written',
-        fleet: 'the server (never the stub) runs and refuses: exit 1, nothing on stdout, the exact 3.9.106 refusal, no request, no key echoed',
+        fleet: 'the launcher refuses (never the stub, never the server): exit 1 like the pinned server, nothing on stdout, exactly the fleet refusal text (no npx, no unpinned spec), no request, no key echoed',
         refused: 'the server (never the stub) runs with no key: exit 1, nothing on stdout, the exact 3.9.106 refusal, no request, the refused file\'s key in no stream and in no new file',
         keyed: 'the real server runs and its bytes equal be64842b\'s apart from the three exact version fields (3.9.105 to 3.9.106)',
         badurl: 'the real server runs and crashes as be64842b does: exit 1, nothing on stdout, the same stack apart from the plugin folder and the two pinned frame positions',
@@ -726,6 +763,15 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
           checks.pinnedSentNothing = noActivity(c);
           checks.pinnedWroteNothing = c !== null && c.fsWrite.length === 0 && before === after;
           checks.keyNotEchoed = nothingEchoed(cand, d);
+        } else if (oracleA !== null && kind === 'fleet') {
+          const log = counted('direct');
+          const d = run(direct, plug, { count: log });
+          const out = cand.stdout + cand.stderr;
+          checks.launcherRefuses = cand.status === 1 && cand.stdout === '' && cand.stderr === FLEET_REFUSAL;
+          checks.sameExitAndStdoutAsPinnedServer = d.status === 1 && d.stdout === '' && cand.status === d.status && cand.stdout === d.stdout;
+          checks.noUnpinnedNextStep = !/npx|@latest|--package=/.test(out);
+          checks.startedNothing = noActivity(countsOf(counted('cand'))) && noActivity(countsOf(log));
+          checks.keyNeverEchoed = nothingEchoed(cand, d);
         } else if (oracleA !== null && serverRun) {
           const log = counted('direct');
           const d = run(direct, plug, { count: log });
@@ -791,20 +837,23 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
     // covers what the pinned 3.9.105 copy can not produce here (a refused owner file reports ownerFileRefused only from 3.9.106).
     {
       const launcherSource = fs.readFileSync(path.join(source, 'scripts', 'marrow-launch.cjs'), 'utf8');
-      const from = launcherSource.indexOf('function keyless(entry) {');
-      const to = launcherSource.indexOf('\n}\n', from) + 3;
-      const lift = (envVars) => new Function('require', 'path', 'URL', 'process', `${launcherSource.slice(from, to)}\nreturn keyless;`)(require, path, URL, { env: envVars });
+      // From noDirectKey() to the end of fleetKeyOnly(): the two decisions and the two helpers they share.
+      const from = launcherSource.indexOf('function noDirectKey(entry) {');
+      const last = launcherSource.indexOf('function fleetKeyOnly(entry) {');
+      const to = launcherSource.indexOf('\n}\n', last) + 3;
+      const lift = (envVars) => new Function('require', 'path', 'URL', 'process', `${launcherSource.slice(from, to)}\nreturn { keyless, fleetKeyOnly };`)(require, path, URL, { env: envVars });
       const dir = path.join(work, 'keyless-decision');
       fs.mkdirSync(dir, { recursive: true });
       const decide = (resolverBody, envVars = {}) => {
         fs.writeFileSync(path.join(dir, 'env.js'), `exports.resolveMarrowEnv = () => { ${resolverBody} };\n`);
         delete require.cache[path.join(dir, 'env.js')]; // one fresh module per row
-        return lift(envVars)(path.join(dir, 'server.js'));
+        const decisions = lift(envVars);
+        return { stub: decisions.keyless(path.join(dir, 'server.js')), fleet: decisions.fleetKeyOnly(path.join(dir, 'server.js')) };
       };
       const none = { apiKey: '', baseUrl: 'https://api.getmarrow.ai', sessionId: undefined, source: null, missing: true, exactFix: 'Create an API key at https://getmarrow.ai' };
       const as = (patch) => `return ${JSON.stringify({ ...none, ...patch })};`;
       const table = [
-        // [name, resolver body, env vars, expected stub]
+        // [name, resolver body, env vars, expected stub, expected fleet-key-only refusal (true only where listed)]
         ['3.9.105 shape, no key', as({}), {}, true],
         ['3.9.106 shape, no key, no owner file refused (field absent)', as({}), {}, true],
         ['empty base URL means the default', as({ baseUrl: '' }), {}, true],
@@ -825,17 +874,33 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
         ['resolver returns null', 'return null;', {}, false],
         ['resolver returns a string', "return '';", {}, false],
         ['resolver throws', "throw new Error('t2 resolver failure');", {}, false],
-        ['fleet key alone (MARROW_KEY_A)', as({}), { MARROW_KEY_A: 'x' }, false],
-        ['fleet key with agent identity', as({}), { MARROW_FLEET_AGENT_ID: 'a', MARROW_AGENT_ID_A: 'a', MARROW_KEY_A: 'x' }, false],
-        ['fleet key, lowercase suffix', as({}), { MARROW_KEY_a: 'x' }, false],
-        ['fleet key, bare prefix MARROW_KEY_', as({}), { MARROW_KEY_: 'x' }, false],
-        ['two fleet slots, one empty', as({}), { MARROW_KEY_A: '', MARROW_KEY_B: 'x' }, false],
+        ['fleet key alone (MARROW_KEY_A)', as({}), { MARROW_KEY_A: 'x' }, false, true],
+        ['fleet key with agent identity', as({}), { MARROW_FLEET_AGENT_ID: 'a', MARROW_AGENT_ID_A: 'a', MARROW_KEY_A: 'x' }, false, true],
+        ['fleet key, lowercase suffix', as({}), { MARROW_KEY_a: 'x' }, false, true],
+        ['fleet key, bare prefix MARROW_KEY_', as({}), { MARROW_KEY_: 'x' }, false, true],
+        ['two fleet slots, one empty', as({}), { MARROW_KEY_A: '', MARROW_KEY_B: 'x' }, false, true],
+        ['fleet key named PROD (a misleading word is only a name)', as({}), { MARROW_KEY_PROD: 'x' }, false, true],
+        ['fleet key named TEST', as({}), { MARROW_KEY_TEST: 'x' }, false, true],
+        ['fleet key, whitespace value (non-empty)', as({}), { MARROW_KEY_A: ' ' }, false, true],
+        ['fleet key, 3.9.106 shape with an https custom base URL', as({ baseUrl: 'https://127.0.0.1:9' }), { MARROW_KEY_A: 'x' }, false, true],
+        ['fleet key + an owner key file was refused: the server runs', as({ ownerFileRefused: true }), { MARROW_KEY_A: 'x' }, false, false],
+        ['fleet key + base URL http: the server runs and shows its own error', as({ baseUrl: 'http://127.0.0.1:9' }), { MARROW_KEY_A: 'x' }, false, false],
+        ['fleet key + base URL with credentials: the server runs', as({ baseUrl: 'https://user:pass@127.0.0.1:9' }), { MARROW_KEY_A: 'x' }, false, false],
+        ['fleet key + resolver throws: the server runs', "throw new Error('t2 resolver failure');", { MARROW_KEY_A: 'x' }, false, false],
+        ['fleet key + resolver returns null: the server runs', 'return null;', { MARROW_KEY_A: 'x' }, false, false],
+        ['fleet key + a direct key: the server runs', as({ apiKey: 'not-a-real-key', missing: false, source: 'MARROW_API_KEY' }), { MARROW_KEY_A: 'x' }, false, false],
+        ['fleet key + source is set: the server runs', as({ source: 'MARROW_API_KEY' }), { MARROW_KEY_A: 'x' }, false, false],
+        ['fleet key + missing is false: the server runs', as({ missing: false }), { MARROW_KEY_A: 'x' }, false, false],
+        ['fleet key + apiKey is whitespace: the server runs', as({ apiKey: '   ' }), { MARROW_KEY_A: 'x' }, false, false],
         ['an empty fleet slot is no key', as({}), { MARROW_KEY_A: '' }, true],
         ['other MARROW_ variables are not keys', as({}), { MARROW_APIKEY: 'x', MARROW_KEYS: 'x', MARROW_AGENT_ID: 'a' }, true],
       ];
-      const wrong = table.filter(([, body, envVars, expected]) => decide(body, envVars) !== expected).map(([name]) => name);
-      result(wrong.length === 0, `T2-4c keyless() decision table: ${table.length} resolver results and env states, stub only for a clear "no key"`, wrong.length ? `wrong: ${wrong.join('; ')}` : `${table.length} rows`);
-      result(/function keyless\(entry\)[\s\S]*ownerFileRefused/.test(launcherSource.slice(from, to)) && !/dist\/cli\.js:\d/.test(launcherSource), 'T2-4c keyless() names ownerFileRefused, and no launcher comment cites a dist/cli.js line number');
+      const wrong = table.filter(([, body, envVars, expected, fleetExpected]) => {
+        const got = decide(body, envVars);
+        return got.stub !== expected || got.fleet !== (fleetExpected === true);
+      }).map(([name]) => name);
+      result(wrong.length === 0, `T2-4c keyless() and fleetKeyOnly() decision table: ${table.length} resolver results and env states, stub only for a clear "no key", the fleet refusal only for a clear "no direct key" plus a fleet key, never both`, wrong.length ? `wrong: ${wrong.join('; ')}` : `${table.length} rows`);
+      result(/ownerFileRefused/.test(launcherSource.slice(from, to)) && !/dist\/cli\.js:\d/.test(launcherSource), 'T2-4c the decision code names ownerFileRefused, and no launcher comment cites a dist/cli.js line number');
     }
 
     // T2-5 resolver throws: today's path, never the stub
@@ -1341,8 +1406,8 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
     const sameSet = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
     const moved = movedFrom(prepinDir);
     const movedOld = movedFrom(baselineDir);
-    result(pinCompared.length === 6 && sameSet(moved, pinCompared) && sameSet(movedOld, [...LAUNCHERS, ...pinCompared]),
-      'T2-13 against ccbe0c32, of every package.json, package-lock.json, mcp-manifest.json, launcher, hooks.json and Codex file only the six pin files moved (both package.json, both package-lock.json, both mcp-manifest.json); against be64842b those six and the two launchers', `${files.length} files compared, moved since ccbe0c32: ${moved.length}, since be64842b: ${movedOld.length}`);
+    result(pinCompared.length === 6 && sameSet(moved, [...pinCompared, ...LAUNCHERS]) && sameSet(movedOld, [...LAUNCHERS, ...pinCompared]),
+      'T2-13 against ccbe0c32, of every package.json, package-lock.json, mcp-manifest.json, launcher, hooks.json and Codex file only the six pin files and the two launchers (the fleet-key refusal) moved; against be64842b the same eight; no hooks.json, Codex file or LICENSE moved', `${files.length} files compared, moved since ccbe0c32: ${moved.length}, since be64842b: ${movedOld.length}`);
     // The manifest hash moved with the pin, and it is the tree hash of what a clean install of the pinned tarballs holds: recomputed here from the
     // verified install in the plugin copy (every file, sorted, name and bytes with NUL separators), not read from the manifest.
     const manifestOf = (dir, plugin) => JSON.parse(bytes(dir, plugin, 'scripts', 'mcp-manifest.json'));
@@ -1376,11 +1441,18 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
       'tools/check.cjs', 'tools/test-launcher-lock.cjs', 'tools/test-launcher-t2.cjs', 'tools/test-launcher.cjs', 'tools/test-session-check.cjs'];
     const differingFrom = (dir) => [...new Set([...walk(dir), ...walk(repo)])].filter((f) => !fs.existsSync(path.join(dir, f)) || !fs.existsSync(path.join(repo, f)) || !bytes(dir, f).equals(bytes(repo, f))).sort();
     const differingPrepin = differingFrom(prepinDir);
-    const expectedPrepin = [...PIN_FILES, ...TEST_COMMIT_FILES].sort();
+    const expectedPrepin = [...new Set([...PIN_FILES, ...TEST_COMMIT_FILES, ...BRANCH_FILES])].sort();
     const expectedOld = [...new Set([...expected, ...PIN_FILES])].sort();
     const list = (got, want) => (got.length === want.length ? `${got.length} files` : '') + (JSON.stringify(got) === JSON.stringify(want) ? '' : ` unexpected: ${got.filter((f) => !want.includes(f)).join(',')} missing: ${want.filter((f) => !got.includes(f)).join(',')}`);
     result(JSON.stringify(differingPrepin) === JSON.stringify(expectedPrepin) && JSON.stringify(differing) === JSON.stringify(expectedOld),
-      'T2-13 exactly these files differ: against ccbe0c32 the 15 pin files named in PIN_FILES (both package.json, package-lock.json, mcp-manifest.json, plugin.json, SKILL.md and marketplace.json, both READMEs, tools/mcp-pins/SOURCE.md) and this test file, nothing else; against be64842b the same fri-train set as before plus the nine more pin files', `since ccbe0c32: ${list(differingPrepin, expectedPrepin)}; since be64842b: ${list(differing, expectedOld)}`);
+      'T2-13 exactly these files differ: against ccbe0c32 the 15 pin files named in PIN_FILES (both package.json, package-lock.json, mcp-manifest.json, plugin.json, SKILL.md and marketplace.json, both READMEs, tools/mcp-pins/SOURCE.md) and the six BRANCH_FILES, nothing else; against be64842b the same fri-train set as before plus the nine more pin files', `since ccbe0c32: ${list(differingPrepin, expectedPrepin)}; since be64842b: ${list(differing, expectedOld)}`);
+    // Against the branch's own base exactly the BRANCH_FILES differ: no pin, manifest, lockfile, hooks.json, Codex file, doc or skill moved.
+    if (!noticeBaseDir) { result(false, 'T2-13 the branch base (5c657b1c) is available for the moved-files comparison', noticeBaseError); } else {
+      const differingBase = differingFrom(noticeBaseDir);
+      result(JSON.stringify(differingBase) === JSON.stringify([...BRANCH_FILES].sort()),
+        'T2-13 against 5c657b1c (the base of this branch) exactly the six BRANCH_FILES differ (both launchers, the session check, tools/check.cjs, this test file, tools/test-session-check.cjs), nothing else',
+        `since 5c657b1c: ${list(differingBase, [...BRANCH_FILES].sort())}`);
+    }
     // No new Windows claim in either direction: existing Windows wording is untouched, except the one README line that was
     // replaced by the exact public line (ed81aa6a); the only other new line is the placeholder marker.
     const WINDOWS_WAS = '**Windows:** Marrow\'s hooks do not work on native Windows yet: every action is blocked. Use WSL, or wait for the fix.';
@@ -1465,7 +1537,7 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
     result(server.status === 1 && server.stdout === '' && server.stderr === REQUIRED_LINE && textsInPack, 'T2-14 oracle: the pinned server with no key exits 1 with nothing on stdout and exactly the 3.9.106 refusal text, which is in the pinned dist (the exit the stub gives a non-MCP start)', `exit ${server.status}`);
     const launcherSource = fs.readFileSync(path.join(plug, 'scripts', 'marrow-launch.cjs'), 'utf8');
     const launcherCode = launcherSource.replace(/^\s*\/\/.*$/gm, '');
-    result((launcherCode.match(/MARROW_API_KEY required/g) || []).length === 1 && !/npx|@latest|--package=/.test(launcherCode), 'T2-14 the launcher holds the refusal text once (one constant, one text) and no npx or unpinned spec');
+    result((launcherCode.match(/MARROW_API_KEY required/g) || []).length === 1 && !/npx|@latest|--package=/.test(launcherCode), 'T2-14 the launcher holds the refusal head once (two bodies share it: no key, fleet key only) and no npx or unpinned spec');
 
     const hookPayloads = [
       ['Claude PreToolUse hook payload', JSON.stringify({ session_id: 's', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' }, cwd: '/x' })],
