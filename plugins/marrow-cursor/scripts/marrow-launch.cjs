@@ -455,6 +455,9 @@ function dataCopy(manifest, install) {
 // says there is no key. keyless() below asks a stricter question than that test, so a doubt always runs the pinned server:
 // the resolver must report missing === true and no source, no refused owner key file, and no MARROW_KEY_<NAME> may be set
 // (@getmarrow/mcp 3.9.106 src/keyless-server.ts keylessStart makes the same decision).
+// A fleet key (MARROW_KEY_<NAME>) with no direct key is not the stub's case and not a working key either: the pinned server would exit 1 and print its
+// own text, which names unpinned npx commands. For the `mcp` argument that state gets FLEET_KEY_REFUSAL and exit 1 from here instead (same exit
+// status, nothing on stdout, nothing started); fleetKeyOnly() below asks it with the same resolver test as the stub, so every other doubt still runs the pinned server.
 // The test is asked of the verified copy's own dist/env.js (listed in mcp-manifest.json, so covered by its sha256).
 // Loading env.js and calling resolveMarrowEnv() only reads files and the environment: no writes, no network, no child
 // process (it requires fs, os and path). Nothing selects the stub: no flag, no env variable, no file. Any doubt (the
@@ -469,9 +472,12 @@ const MAX_LINE_BYTES = 1024 * 1024;
 // it is this launcher's own text: it says the server did not start and gives a next step that exists in the host.
 // The 3.9.105 server's own text cannot be reused: it names an unpinned npx command and
 // `marrow-mcp setup`, which a plugin must not tell anyone to run.
-const NO_KEY_REFUSAL = 'Error: MARROW_API_KEY required. Marrow plugin: no Marrow key on this machine, so the Marrow MCP server did not start. '
-  + 'To connect an account, create an agent key at https://getmarrow.ai, put MARROW_API_KEY in ~/.marrow/env, run chmod 600 ~/.marrow/env, '
+const REFUSAL_HEAD = 'Error: MARROW_API_KEY required. Marrow plugin: ';
+const REFUSAL_STEPS = 'To connect an account, create an agent key at https://getmarrow.ai, put MARROW_API_KEY in ~/.marrow/env, run chmod 600 ~/.marrow/env, '
   + 'then restart Claude Code or Cursor. The plugin hooks still apply without a key. Do not run marrow-mcp setup or activate for the plugin.\n';
+const NO_KEY_REFUSAL = `${REFUSAL_HEAD}no Marrow key on this machine, so the Marrow MCP server did not start. ${REFUSAL_STEPS}`;
+// The refusal for a fleet key with no MARROW_API_KEY: the same next step, and it says what is wrong instead of "no Marrow key on this machine".
+const FLEET_KEY_REFUSAL = `${REFUSAL_HEAD}a fleet key (MARROW_KEY_<NAME>) is set but MARROW_API_KEY is not, and the Marrow MCP server needs MARROW_API_KEY, so it did not start. ${REFUSAL_STEPS}`;
 const STUB_NOTICE = 'Marrow plugin: no Marrow key on this machine, so the Marrow MCP server started with no tools. The plugin hooks still apply.';
 const STUB_INSTRUCTIONS = 'This Marrow server started without a Marrow key on this machine, so it has no tools. '
   + 'It does not judge, check or record any action. '
@@ -479,15 +485,14 @@ const STUB_INSTRUCTIONS = 'This Marrow server started without a Marrow key on th
   + `To connect a Marrow account, the owner follows the key steps in the Marrow skill in their own terminal, then restarts ${HOST_NAME}. `
   + 'A key can not be added from this chat.';
 
-function keyless(entry) {
+// The part both questions share: the pinned copy's own resolver (no options) says there is no key from any source, no owner key file was
+// refused (the field exists from 3.9.106; an older env.js leaves it undefined), and the base URL passes the server's own test.
+function noDirectKey(entry) {
   try {
     const envFile = path.join(path.dirname(entry), 'env.js');
     const resolved = require(envFile).resolveMarrowEnv();
     if (resolved === null || typeof resolved !== 'object' || resolved.apiKey !== '') return false;
-    // A clear "no key" only: the resolver says missing with no source, and no owner key file was refused (the field exists from 3.9.106;
-    // an older env.js leaves it undefined). A fleet key (MARROW_KEY_<NAME>) is still a key whatever the resolver returned: the server exits 1 for it.
     if (resolved.missing !== true || resolved.source !== null || resolved.ownerFileRefused !== undefined) return false;
-    if (Object.keys(process.env).some((name) => name.startsWith('MARROW_KEY_') && Boolean(process.env[name]))) return false;
     // Before it looks at the key the server checks its base URL (dist/cli.js, validateBaseUrl in dist/index.js): one that is
     // not https or that carries credentials ends the server with a different error, which the owner needs to see. Same test here.
     const base = resolved.baseUrl || 'https://api.getmarrow.ai';
@@ -497,6 +502,20 @@ function keyless(entry) {
   } catch {
     return false;
   }
+}
+
+// A fleet key (MARROW_KEY_<NAME>) is still a key whatever the resolver returned: a non-empty one is never the stub's case.
+function fleetKeySet() {
+  return Object.keys(process.env).some((name) => name.startsWith('MARROW_KEY_') && Boolean(process.env[name]));
+}
+
+function keyless(entry) {
+  return noDirectKey(entry) && !fleetKeySet();
+}
+
+// The fleet-key-only state: no direct key anywhere (same resolver test as the stub), a non-empty MARROW_KEY_<NAME>. The pinned server refuses it.
+function fleetKeyOnly(entry) {
+  return noDirectKey(entry) && fleetKeySet();
 }
 
 // The protocolVersion the pinned server answers (noteClientCapabilities in dist/cli.js): the requested one only when it is
@@ -660,6 +679,12 @@ function main() {
   if (args[0] === PREPARE) return;
   // No key anywhere the pinned server reads one: answer the MCP protocol with a server that has no tools.
   if (args[0] === MCP_MODE && keyless(entry)) return serveKeyless(manifest.mcp.version);
+  // A fleet key with no direct key: the pinned server would exit 1 with a text that names unpinned commands. Same exit status, this plugin's text.
+  if (args[0] === MCP_MODE && fleetKeyOnly(entry)) {
+    process.stderr.write(FLEET_KEY_REFUSAL);
+    process.exitCode = 1;
+    return;
+  }
   process.argv = [process.argv[0], entry, ...(args[0] === MCP_MODE ? [] : args)];
   require(entry);
 }

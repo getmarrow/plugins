@@ -345,6 +345,76 @@ check('session check only reads files and prints fixed text', () => {
   }
 });
 
+// The keyless line is shown only while the pinned hook is in its keyless seatbelt mode. The session check asks the verified pinned copy
+// (the one the launcher would run) with the hook's own calls, using copies of the launcher's verification functions.
+const fnText = (source, name) => {
+  const start = source.indexOf('\nfunction ' + name + '(');
+  assert.ok(start >= 0, 'function ' + name + ' not found');
+  const end = source.indexOf('\n}\n', start);
+  assert.ok(end > start, 'function ' + name + ' has no end');
+  return source.slice(start, end + 3);
+};
+const constLine = (source, name) => {
+  const match = new RegExp('^const ' + name + ' = .*;$', 'm').exec(source);
+  assert.ok(match, 'const ' + name + ' not found');
+  return match[0];
+};
+
+check('session check: the pinned-copy verification is the launcher\'s own, word for word', () => {
+  for (const name of ['loadManifest', 'owned', 'listFiles', 'verifiedEntry', 'privateDir']) {
+    assert.strictEqual(fnText(sessionCheck, name), fnText(launcher, name), name + ' differs from the launcher');
+  }
+  for (const name of ['VERSION_RE', 'POSIX', 'ROOT']) {
+    assert.strictEqual(constLine(sessionCheck, name), constLine(launcher, name), name + ' differs from the launcher');
+  }
+});
+
+check('session check: the keyless line needs the hook\'s mode, the lstat check first, and fails closed', () => {
+  const begin = sessionCheck.indexOf("// ---- the hook's mode, asked of the verified pinned copy (begin)");
+  const end = sessionCheck.indexOf("// ---- the hook's mode, asked of the verified pinned copy (end)");
+  assert.ok(begin > 0 && end > begin, 'markers');
+  const block = sessionCheck.slice(begin, end).replace(/^\s*\/\/.*$/gm, '');
+  const mode = fnText(block, 'hookModeIsSeatbelt');
+  assert.ok(/resolveMarrowEnv\(\{ trustedOnly: true \}\)/.test(mode), 'the key lookup of the hook identity');
+  assert.ok(/resolved\.apiKey !== ''\) return false/.test(mode), 'strict empty-string key test');
+  assert.ok(/resolveSeatbeltModeOnHost\(\)/.test(mode), 'the mode resolver, with its defaults');
+  assert.ok(/resolution\.mode !== 'seatbelt'\) return false/.test(mode), 'only seatbelt');
+  assert.ok(/SEATBELT_ROLLOUT\.keyless === 'on'/.test(mode), 'the rollout switch');
+  assert.ok(/catch \{\s*return false;\s*\}/.test(mode), 'a throw is false');
+  assert.ok(/if \(!entry\) return false;/.test(mode), 'no verified copy is false');
+  // Every load of the pinned copy goes through its dist folder; the rest of the script requires only core modules.
+  const requires = [...block.matchAll(/\brequire\(([^)]*\)?)\)/g)].map((m) => m[1]);
+  assert.strictEqual(requires.length, 3);
+  for (const arg of requires) assert.ok(/^path\.join\(dist, '/.test(arg), 'require of ' + arg);
+  const outside = [...sessionCheck.replace(/^\s*\/\/.*$/gm, '').replace(block, '').matchAll(/\brequire\(([^)]*)\)/g)].map((m) => m[1]);
+  assert.deepStrictEqual(outside.sort(), ["'crypto'", "'fs'", "'os'", "'path'"]);
+  // The write is the fixed notice, after both checks, in the keyless branch only.
+  assert.ok(/\} else if \(noKeyIsSet\(\) && hookModeIsSeatbelt\(\)\) \{\n  process\.stdout\.write\(JSON\.stringify\(\{ systemMessage: KEYLESS_NOTICE \}\)\);\n\}\n$/.test(sessionCheck), 'tail');
+  assert.ok(sessionCheck.indexOf('noKeyIsSet() && hookModeIsSeatbelt()') > sessionCheck.indexOf('function hookModeIsSeatbelt'), 'order');
+  assert.ok(sessionCheck.indexOf('lstat only (end)') > 0 && sessionCheck.indexOf('lstat only (end)') < sessionCheck.indexOf('function pinnedEntry'), 'the lstat block comes first');
+  // No call that installs, writes, spawns or reaches the network (the pinned-copy code only reads).
+  for (const word of ['spawn', 'exec', 'child_process', 'npm', 'fetch', 'http', 'writeFile', 'mkdir', 'rename', 'unlink', 'rmSync', 'chmod', '@latest']) {
+    assert.ok(!block.includes(word), 'pinned-copy code uses ' + word);
+  }
+});
+
+check('launcher: a fleet key without MARROW_API_KEY gets a refusal with no unpinned command, and the other launcher is identical', () => {
+  const refusal = /^const FLEET_KEY_REFUSAL = .*$/m.exec(launcher);
+  assert.ok(refusal, 'FLEET_KEY_REFUSAL');
+  const shared = launcher.slice(launcher.indexOf('const REFUSAL_HEAD'), launcher.indexOf('function noDirectKey')).replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(!/\bnpx\b|@latest|--package|install@/.test(shared), 'refusal text names an unpinned command');
+  assert.ok(/MARROW_KEY_<NAME>/.test(refusal[0]) && !/process\.env/.test(shared), 'the refusal names the variable family, never a value');
+  const fleet = fnText(launcher, 'fleetKeySet');
+  assert.ok(/startsWith\('MARROW_KEY_'\)/.test(fleet) && /Boolean\(process\.env\[name\]\)/.test(fleet), 'a fleet key is a non-empty MARROW_KEY_ variable');
+  assert.ok(/return noDirectKey\(entry\) && !fleetKeySet\(\);/.test(fnText(launcher, 'keyless')), 'the stub is only for no key at all');
+  assert.ok(/return noDirectKey\(entry\) && fleetKeySet\(\);/.test(fnText(launcher, 'fleetKeyOnly')), 'fleet only');
+  const branch = /if \(args\[0\] === MCP_MODE && fleetKeyOnly\(entry\)\) \{\n\s+process\.stderr\.write\(FLEET_KEY_REFUSAL\);\n\s+process\.exitCode = 1;\n\s+return;\n\s+\}/.exec(launcher);
+  assert.ok(branch, 'the fleet branch refuses and exits 1');
+  assert.ok(branch.index > launcher.indexOf('dataCopy(manifest, install)'), 'after the verified copy is chosen');
+  assert.ok(branch.index < launcher.indexOf('require(entry);', branch.index), 'before the server is started');
+  assert.strictEqual(launcher, read('plugins/marrow-cursor/scripts/marrow-launch.cjs'), 'the Claude and Cursor launchers must be identical');
+});
+
 check('plugin sets no Claude Code settings and no permission or hook switches', () => {
   assert.strictEqual(manifest.settings, undefined);
   assert.strictEqual(manifest.userConfig, undefined);
