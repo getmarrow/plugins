@@ -7,7 +7,7 @@ description: Marrow approval and proof rules for this Cursor session. Use before
 
 Marrow is the approval and proof layer for agent actions. The Marrow plugin for Cursor adds:
 
-- Hooks before and after tool calls, shell commands and MCP calls. They run the pinned `@getmarrow/mcp` 3.9.106 entrypoints, the same ones `npx @getmarrow/install` writes into `.cursor/hooks.json`. Hooks are cooperative, client-reported control: they act only while this plugin is enabled and Cursor runs them, and a configured hook never proves coverage on its own.
+- Hooks before and after tool calls, shell commands and MCP calls. They run the pinned `@getmarrow/mcp` 3.9.107 entrypoints, the same ones `npx @getmarrow/install` writes into `.cursor/hooks.json`. Hooks are cooperative, client-reported control: they act only while this plugin is enabled and Cursor runs them, and a configured hook never proves coverage on its own.
 - The Marrow MCP server. Its `marrow_*` tools are on demand: they do nothing until called.
 
 ## Rules
@@ -20,7 +20,7 @@ Marrow is the approval and proof layer for agent actions. The Marrow plugin for 
 
 ## No key yet
 
-Installing the plugin needs no account and no key. The hooks run `@getmarrow/mcp` 3.9.106, which includes the free keyless seatbelt: when there is no usable key and the machine shows no sign of a Marrow account, they stop seven kinds of action with the host's own deny and make no network call. The seven are changes to Marrow's own hooks, settings or plugins (and owner-only Marrow commands), force-push or delete of a protected branch, a production deploy, a package publish, reading credentials or secrets (a project `.env` file other than a template included), a recursive delete outside the workspace, and decoded data run by a shell or interpreter. Everything else gets no Marrow decision, so Cursor asks with its own approval prompt before a shell command that a hook without a key used to hold (for example `git commit` or `git push`), and its other tools (MCP calls included) keep holding what a hook without a key held before. It is a seatbelt, not a vault: a determined agent can get around a local check. With an account, Marrow holds risky actions for approval and keeps the audit trail.
+Installing the plugin needs no account and no key. The hooks run `@getmarrow/mcp` 3.9.107, which includes the free keyless seatbelt: when there is no usable key and the machine shows no sign of a Marrow account, they stop seven kinds of action with the host's own deny and make no network call. The seven are changes to Marrow's own hooks, settings or plugins (and owner-only Marrow commands), force-push or delete of a protected branch, a production deploy, a package publish, reading credentials or secrets (a project `.env` file other than a template included), a recursive delete outside the workspace, and decoded data run by a shell or interpreter. Everything else gets no Marrow decision, so Cursor asks with its own approval prompt before a shell command that a hook without a key used to hold (for example `git commit` or `git push`), and its other tools (MCP calls included) keep holding what a hook without a key held before. It is a seatbelt, not a vault: a determined agent can get around a local check. With an account, Marrow holds risky actions for approval and keeps the audit trail.
 
 When a seatbelt stop appears, tell the person what was stopped; it needs the machine owner. Do not retry it another way, and do not change Marrow's hooks, settings or plugins to get past it. Until a key exists:
 

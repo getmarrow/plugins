@@ -1,7 +1,7 @@
 {
   "name": "marrow-advisory",
-  "version": "0.1.1",
-  "description": "Advisory Marrow: the Marrow MCP server (pinned @getmarrow/mcp 3.9.102) and a short skill, with no hooks. Marrow sees an action only when the agent calls a marrow_* tool, so nothing is held or enforced.",
+  "version": "0.1.2",
+  "description": "Advisory Marrow: the Marrow MCP server (pinned @getmarrow/mcp 3.9.107) and a short skill, with no hooks. Marrow sees an action only when the agent calls a marrow_* tool, so nothing is held or enforced.",
   "author": {
     "name": "Marrow",
     "url": "https://getmarrow.ai"
@@ -34,8 +34,8 @@
   },
   "metadata": {
     "pins": {
-      "@getmarrow/mcp": "3.9.102",
-      "@getmarrow/sdk": "3.7.65"
+      "@getmarrow/mcp": "3.9.107",
+      "@getmarrow/sdk": "3.7.67"
     },
     "advisory": true
   }
