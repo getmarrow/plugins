@@ -1,8 +1,8 @@
 {
   "name": "marrow",
   "displayName": "Marrow",
-  "version": "0.2.5",
-  "description": "Approvals, policy and receipts for agent actions. Adds Marrow's approval hooks (pinned @getmarrow/mcp 3.9.107, with the free keyless seatbelt), the Marrow MCP server and a short skill. Hooks are cooperative, client-reported control.",
+  "version": "0.2.6",
+  "description": "Approvals, policy and receipts for agent actions. Adds Marrow's approval hooks (pinned @getmarrow/mcp 3.9.108, with the free keyless seatbelt), the Marrow MCP server and a short skill. Hooks are cooperative, client-reported control.",
   "author": {
     "name": "Marrow",
     "url": "https://getmarrow.ai"
@@ -13,7 +13,7 @@
   "keywords": ["governance", "approvals", "hooks", "mcp", "audit", "agent-control"],
   "metadata": {
     "pins": {
-      "@getmarrow/mcp": "3.9.107",
+      "@getmarrow/mcp": "3.9.108",
       "@getmarrow/sdk": "3.7.67"
     }
   }
