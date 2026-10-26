@@ -80,6 +80,23 @@ const BRANCH_FILES = [
   'tools/test-launcher-t2.cjs',
   'tools/test-session-check.cjs',
 ];
+// The files the 3.9.107 repin moved in the two Codex plugins (the Codex plugins pin MCP 3.9.107 and SDK 3.7.67 with the other two hosts), each named:
+// package.json, package-lock.json, mcp-manifest.json, plugin.json (version, pins), SKILL.md and references/hosts.md of both. No Codex launcher,
+// hooks.json, .mcp.json, LICENSE or doc moved; T2-13 holds that with the exact sets below.
+const CODEX_PIN_FILES = [
+  'codex/marrow-advisory/.codex-plugin/plugin.json',
+  'codex/marrow-advisory/package-lock.json',
+  'codex/marrow-advisory/package.json',
+  'codex/marrow-advisory/scripts/mcp-manifest.json',
+  'codex/marrow-advisory/skills/marrow/SKILL.md',
+  'codex/marrow-advisory/skills/marrow/references/hosts.md',
+  'codex/marrow/.codex-plugin/plugin.json',
+  'codex/marrow/package-lock.json',
+  'codex/marrow/package.json',
+  'codex/marrow/scripts/mcp-manifest.json',
+  'codex/marrow/skills/marrow/SKILL.md',
+  'codex/marrow/skills/marrow/references/hosts.md',
+];
 // The only places a server's stdout carries its own version: result.serverInfo.version of the initialize answer and the two client_update
 // fields of the log notification. T2-4 normalizes exactly these paths, each only when it equals the pinned version string.
 const VERSION_PATHS = [['result', 'serverInfo', 'version'], ['params', 'data', 'client_update', 'installed_version'], ['params', 'data', 'client_update', 'latest_version']];
@@ -1440,19 +1457,20 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
       }
     }
     if (!prepinDir) { result(false, 'T2-13 the pre-pin commit (ccbe0c32) is available for the moved-files comparison', prepinError); return; }
-    // The pin commits moved the pin files and nothing else. Against ccbe0c32 exactly the six pin files among those compared moved (both package.json,
-    // both package-lock.json, both mcp-manifest.json); no launcher, hooks.json or Codex file moved (the Codex plugins are not repinned in this release:
-    // they stay at 0.1.1 and pin 3.9.102). Against be64842b (file anchor) those six and the two launchers. Against the baseline 5c657b1c, which pins 3.9.106,
-    // the same eight: the 3.9.107 repin of the Claude and Cursor plugins and the two launchers (the fleet-key refusal).
+    // The pin commits moved the pin files and nothing else. Against ccbe0c32 exactly the six Claude and Cursor pin files among those compared moved (both
+    // package.json, both package-lock.json, both mcp-manifest.json) and the six Codex ones (the same three files in each Codex plugin), plus the two
+    // launchers; no Codex launcher, hooks.json or LICENSE moved. Against be64842b (file anchor) the same fourteen. Against the baseline 5c657b1c,
+    // which pins 3.9.106, the same fourteen: the 3.9.107 repin of the three hosts and the two launchers (the fleet-key refusal).
     const LAUNCHERS = ['plugins/marrow/scripts/marrow-launch.cjs', 'plugins/marrow-cursor/scripts/marrow-launch.cjs'];
     const pinCompared = PIN_FILES.filter((f) => files.includes(f));
+    const codexCompared = CODEX_PIN_FILES.filter((f) => files.includes(f));
     const movedFrom = (dir) => files.filter((f) => !fs.existsSync(path.join(dir, f)) || !bytes(dir, f).equals(bytes(repo, f)));
     const sameSet = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
     const moved = movedFrom(prepinDir);
     const movedOld = movedFrom(oldDir);
     const movedBase = movedFrom(baselineDir);
-    result(pinCompared.length === 6 && sameSet(moved, [...pinCompared, ...LAUNCHERS]) && sameSet(movedOld, [...LAUNCHERS, ...pinCompared]) && sameSet(movedBase, [...pinCompared, ...LAUNCHERS]),
-      'T2-13 against ccbe0c32, of every package.json, package-lock.json, mcp-manifest.json, launcher, hooks.json and Codex file only the six pin files and the two launchers (the fleet-key refusal) moved; against be64842b the same eight; against the baseline 5c657b1c the same eight (the 3.9.107 repin and the two launchers); no hooks.json, Codex file or LICENSE moved', `${files.length} files compared, moved since ccbe0c32: ${moved.length}, since be64842b: ${movedOld.length}, since 5c657b1c: ${movedBase.length}`);
+    result(pinCompared.length === 6 && codexCompared.length === 6 && sameSet(moved, [...pinCompared, ...codexCompared, ...LAUNCHERS]) && sameSet(movedOld, [...LAUNCHERS, ...pinCompared, ...codexCompared]) && sameSet(movedBase, [...pinCompared, ...codexCompared, ...LAUNCHERS]),
+      'T2-13 against ccbe0c32, of every package.json, package-lock.json, mcp-manifest.json, launcher, hooks.json and LICENSE only the six Claude and Cursor pin files, the six Codex pin files and the two launchers (the fleet-key refusal) moved; against be64842b the same fourteen; against the baseline 5c657b1c the same fourteen; no hooks.json, Codex launcher or LICENSE moved', `${files.length} files compared, moved since ccbe0c32: ${moved.length}, since be64842b: ${movedOld.length}, since 5c657b1c: ${movedBase.length}`);
     // The manifest hash moved with the pin, and it is the tree hash of what a clean install of the pinned tarballs holds: recomputed here from the
     // verified install in the plugin copy (every file, sorted, name and bytes with NUL separators), not read from the manifest.
     const manifestOf = (dir, plugin) => JSON.parse(bytes(dir, plugin, 'scripts', 'mcp-manifest.json'));
@@ -1486,19 +1504,19 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
       'tools/check.cjs', 'tools/test-launcher-lock.cjs', 'tools/test-launcher-t2.cjs', 'tools/test-launcher.cjs', 'tools/test-session-check.cjs'];
     const differingFrom = (dir) => [...new Set([...walk(dir), ...walk(repo)])].filter((f) => !fs.existsSync(path.join(dir, f)) || !fs.existsSync(path.join(repo, f)) || !bytes(dir, f).equals(bytes(repo, f))).sort();
     const differingPrepin = differingFrom(prepinDir);
-    const expectedPrepin = [...new Set([...PIN_FILES, ...TEST_COMMIT_FILES, ...BRANCH_FILES])].sort();
-    const expectedOld = [...new Set([...expected, ...PIN_FILES])].sort();
+    const expectedPrepin = [...new Set([...PIN_FILES, ...CODEX_PIN_FILES, ...TEST_COMMIT_FILES, ...BRANCH_FILES])].sort();
+    const expectedOld = [...new Set([...expected, ...PIN_FILES, ...CODEX_PIN_FILES])].sort();
     const list = (got, want) => (got.length === want.length ? `${got.length} files` : '') + (JSON.stringify(got) === JSON.stringify(want) ? '' : ` unexpected: ${got.filter((f) => !want.includes(f)).join(',')} missing: ${want.filter((f) => !got.includes(f)).join(',')}`);
     result(JSON.stringify(differingPrepin) === JSON.stringify(expectedPrepin) && JSON.stringify(differing) === JSON.stringify(expectedOld),
-      'T2-13 exactly these files differ: against ccbe0c32 the 15 pin files named in PIN_FILES (both package.json, package-lock.json, mcp-manifest.json, plugin.json, SKILL.md and marketplace.json, both READMEs, tools/mcp-pins/SOURCE.md) and the six BRANCH_FILES, nothing else; against be64842b the same fri-train set as before plus the nine more pin files', `since ccbe0c32: ${list(differingPrepin, expectedPrepin)}; since be64842b: ${list(differing, expectedOld)}`);
-    // Against the branch's own base exactly the BRANCH_FILES and the files of the 3.9.107 repin differ (PIN_FILES): no hooks.json,
-    // Codex file, .mcp.json, LICENSE, other doc or skill moved.
+      'T2-13 exactly these files differ: against ccbe0c32 the 15 pin files named in PIN_FILES (both package.json, package-lock.json, mcp-manifest.json, plugin.json, SKILL.md and marketplace.json, both READMEs, tools/mcp-pins/SOURCE.md), the 12 Codex files named in CODEX_PIN_FILES and the six BRANCH_FILES, nothing else; against be64842b the same fri-train set as before plus the nine more pin files and the 12 Codex files', `since ccbe0c32: ${list(differingPrepin, expectedPrepin)}; since be64842b: ${list(differing, expectedOld)}`);
+    // Against the branch's own base exactly the BRANCH_FILES and the files of the 3.9.107 repin differ (PIN_FILES and CODEX_PIN_FILES): no hooks.json,
+    // Codex launcher, .mcp.json, LICENSE, other doc or skill moved.
     if (!noticeBaseDir) { result(false, 'T2-13 the branch base (5c657b1c) is available for the moved-files comparison', noticeBaseError); } else {
       const differingBase = differingFrom(noticeBaseDir);
       const differingBaseline = differingFrom(baselineDir);
-      const expectedBase = [...new Set([...BRANCH_FILES, ...PIN_FILES])].sort();
+      const expectedBase = [...new Set([...BRANCH_FILES, ...PIN_FILES, ...CODEX_PIN_FILES])].sort();
       result(JSON.stringify(differingBase) === JSON.stringify(expectedBase) && JSON.stringify(differingBaseline) === JSON.stringify(expectedBase),
-        'T2-13 against 5c657b1c (the base of this branch and the baseline) exactly the six BRANCH_FILES (both launchers, the session check, tools/check.cjs, this test file, tools/test-session-check.cjs), and the 15 PIN_FILES differ, nothing else',
+        'T2-13 against 5c657b1c (the base of this branch and the baseline) exactly the six BRANCH_FILES (both launchers, the session check, tools/check.cjs, this test file, tools/test-session-check.cjs), the 15 PIN_FILES and the 12 CODEX_PIN_FILES differ, nothing else',
         `since 5c657b1c: ${list(differingBase, expectedBase)}; since the baseline: ${list(differingBaseline, expectedBase)}`);
     }
     // No new Windows claim in either direction: existing Windows wording is untouched, except the one README line that was
