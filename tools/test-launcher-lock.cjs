@@ -5,6 +5,7 @@
 //   node tools/test-launcher-lock.cjs [claude|cursor]
 // Same rules as test-launcher-t2.cjs: children get an allowlisted env, npm uses npm_config_cache from the parent (seeded cache),
 // nothing here reads or writes a real key.
+require('../test/isolate.cjs'); // private HOME and spawn guard for every child this tool starts (test/child-isolation.cjs)
 const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');

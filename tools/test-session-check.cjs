@@ -19,6 +19,7 @@
 // The pinned copy is installed with `npm ci --ignore-scripts` from the plugin's own lockfile, using npm_config_cache from the environment
 // (a cache seeded with the pinned tarballs keeps it offline), like the launcher tests. The hook and the resolvers see a fake passwd home
 // (os.userInfo and os.homedir are replaced by a test-only preload written here): the real home is never read.
+require('../test/isolate.cjs'); // private HOME and spawn guard for every child this tool starts (test/child-isolation.cjs)
 const { spawnSync } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -233,13 +234,20 @@ function envFor(m, extra) {
   return { env, twice };
 }
 
+const ISOLATION_PRELOAD = require('../test/child-isolation.cjs').SELF; // the file the spawn guard looks for after --require on a command line
 function spawnIn(m, extra, file, args, input) {
   const { env, twice } = envFor(m, extra);
   runs += 1;
-  // `__twice`: the same name set twice on the command line of env(1), where the last one wins (a process only ever sees one value).
-  const r = twice.length
-    ? spawnSync('/usr/bin/env', [...Object.entries(env).map(([k, v]) => `${k}=${v}`), ...twice, process.execPath, file, ...args], { env: {}, cwd: m.project, input, encoding: 'utf8', timeout: 9000, killSignal: 'SIGKILL' })
-    : spawnSync(process.execPath, [file, ...args], { env, cwd: m.project, input, encoding: 'utf8', timeout: 9000, killSignal: 'SIGKILL' });
+  // HOME empty, relative or the filesystem root is the row's subject: child-isolation.cjs allows it (cwd under the test temp dir) only with this option.
+  const oddHome = typeof env.HOME === 'string' && (env.HOME === '' || !path.isAbsolute(env.HOME) || env.HOME === path.parse(env.HOME).root);
+  // env(1) starts the node child, for two kinds of row, so that its environment is exactly the row's and nothing the spawn guard adds: `__twice`, the same name
+  // set twice on the command line, where the last one wins (a process only ever sees one value); and HOME unset (`-i`, and no HOME among the names), which
+  // the guard would fill in for a direct child. The guard cannot add its preload to a node child that env(1) starts, so `--require` is put on the command
+  // line here, as the guard does for a direct node child; env(1) itself runs with the empty environment.
+  const viaEnv = twice.length > 0 || env.HOME === undefined;
+  const r = viaEnv
+    ? spawnSync('/usr/bin/env', ['-i', ...Object.entries(env).map(([k, v]) => `${k}=${v}`), ...twice, process.execPath, '--require', ISOLATION_PRELOAD, file, ...args], { env: {}, cwd: m.project, input, encoding: 'utf8', timeout: 9000, killSignal: 'SIGKILL' })
+    : spawnSync(process.execPath, [file, ...args], { env, cwd: m.project, input, encoding: 'utf8', timeout: 9000, killSignal: 'SIGKILL', ...(oddHome ? { isolationOddHome: true } : {}) });
   assert.ok(!r.error, `did not finish: ${r.error && r.error.code}`);
   assert.strictEqual(r.signal, null);
   return r;

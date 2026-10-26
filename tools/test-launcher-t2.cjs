@@ -19,6 +19,7 @@
 // pinned tarball (keyless start, refusal text), they never assume it. The only value of the keyless stub's answer that differs
 // from the baseline's is its serverInfo.version, which each side reports as its own pin.
 // Optional T2_REPORT_DIR: a JSON file with the matrices and texts of the run is written there.
+require('../test/isolate.cjs'); // private HOME and spawn guard for every child this tool starts (test/child-isolation.cjs)
 const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -49,7 +50,7 @@ const REQUIRED_LINE_CLAUDE = `Error: MARROW_API_KEY required. ${PLUGIN_KEY_STEPS
 const REQUIRED_LINE_CURSOR = `Error: MARROW_API_KEY environment variable is required\n${NO_KEY_FIX}\n${GET_A_KEY_LINE}\n`;
 // The pinned 3.9.107 keyless server's own notice (the same text as 3.9.106; dist/keyless-server.js KEYLESS_NOTICE): it tells a real server run from the launcher's stub.
 const SERVER_KEYLESS_NOTICE = 'Marrow: no Marrow key on this machine, so the Marrow MCP server started with no tools. Marrow hooks, where they are set up, keep their free keyless seatbelt.';
-// The files the 3.9.106 pin commit moved against PREPIN_REF, each named, plus the one test file this row lives in (moved by the test commit).
+// The files the 3.9.106 pin commit moved against PREPIN_REF, each named, plus the test-only files moved by the test commits (the T2 rows, then the child-isolation files), each named. Naming them is the rule: a product file moving still fails.
 // Any other file moving fails T2-13.
 const PIN_FILES = [
   '.claude-plugin/marketplace.json',
@@ -68,7 +69,42 @@ const PIN_FILES = [
   'plugins/marrow/skills/marrow/SKILL.md',
   'tools/mcp-pins/SOURCE.md',
 ];
-const TEST_COMMIT_FILES = ['tools/test-launcher-t2.cjs'];
+const TEST_COMMIT_FILES = [
+  'test/child-isolation.cjs',
+  'test/child-isolation.test.cjs',
+  'test/fixtures/git-push-local-control.cjs',
+  'test/fixtures/git-push-swallow.cjs',
+  'test/fixtures/isolation-probe.cjs',
+  'test/isolate.cjs',
+  'tools/bench-hooks.cjs',
+  'tools/pins-check-ci.cjs',
+  'tools/test-launcher-lock.cjs',
+  'tools/test-launcher-t2.cjs',
+  'tools/test-launcher.cjs',
+  'tools/test-session-check.cjs',
+];
+// F8 (owner-decided: OWNER-DECISIONS-20261024.md item 4): the 11 test-only files the child-isolation commits added are pinned to their sha256, so T2-13 accepts exactly these
+// bytes and not any content under these names. This file holds the pins, so it cannot pin itself: its own name stays allowed as before.
+const TEST_FILE_SHA256 = {
+  'test/child-isolation.cjs': 'ea1739f63ad04faddf7317695da34a6bd44dfd9fce05536368cdb1ef7d687107',
+  'test/child-isolation.test.cjs': 'ae07325b4f814db7c5a8377b8df662de27bc9f29e53b70fe7f2bc15c8cfc9009',
+  'test/fixtures/git-push-local-control.cjs': '5da537afc24b7a32fb4e4a7242776a0e0a889c05d502777d80c2487d7b2c9cb2',
+  'test/fixtures/git-push-swallow.cjs': '2d28c87eec0570d5f2cc50036df057df1d0e20cd1a7f92eb4ab9976aa70f8b8e',
+  'test/fixtures/isolation-probe.cjs': 'aebbe483d52d3023ee487b126bdb9530a07c3e85f6d4c0415182dbc88c6367f2',
+  'test/isolate.cjs': '3ee00aa907cbb7f220ba2a73b8cc9952349877e0d31e501f8bc9e5349aead06c',
+  'tools/bench-hooks.cjs': '3b7d63f58871145cc378c47abaf29940b74dc8ae78538cb766a07ab4ae1e47a5',
+  'tools/pins-check-ci.cjs': '2f89935cfcd52f6cd166008051e2df616cb7fa277671c712eb191ad9833ed1d0',
+  'tools/test-launcher-lock.cjs': '8fb993ac4802bc61e3116c72fc1673c17c2f05ea319b361b9b4e6e6f83a09cc0',
+  'tools/test-launcher.cjs': '4b4f75206e2bffc576425a04769b129527b773e1bfa1b0cf9a4c1a00129d2400',
+  'tools/test-session-check.cjs': 'a925614bd51a5ec0b663a5f98f62f91092fef301408804f7744b5172792916f3',
+};
+// The two files of the pub-fix ride (0de66126): SECURITY.md and the CODEOWNERS file. T2-13 is a closed set, so they are named and pinned to
+// their sha256 the same way; no other name is added for them.
+const PUB_FILE_SHA256 = {
+  '.github/CODEOWNERS': 'f4139495797fc74231258347d934eef351af98b7bc3f3cd754bf6942f7bd7a61',
+  'SECURITY.md': '3d7059a171ae6886ef40ba04c89cc01a59ec9967507a290bcd22d770c1deb08f',
+};
+const PUB_FILES = Object.keys(PUB_FILE_SHA256).sort();
 // The base of the session-notice branch (the plugins final, pinned to MCP 3.9.106) and every file that branch moved against it: the launcher's
 // fleet-key refusal (both copies), the session check's notice, and the checks and tests that hold them. T2-13 names them so nothing else moves quietly.
 const NOTICE_BASE_REF = '5c657b1c959846161a21b2c2dff43e86ba52b786';
@@ -386,22 +422,28 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
       ...extra,
     });
   }
-  function launch(pluginDir, args, { home, cwd, input = '', extra = {}, timeout = 120000 }) {
+  // oddHome: the row's HOME is deliberately not a private temp folder (another account's folder); child-isolation.cjs allows it only
+  // when that folder is not writable by this user. keepsArgv: the child's command line must stay as built (T2-7: the preload that
+  // throws on child_process would refuse the isolation preload, and the stub session must be byte-identical).
+  function launch(pluginDir, args, { home, cwd, input = '', extra = {}, timeout = 120000, oddHome = false }) {
     return take(spawnSync(process.execPath, [path.join(pluginDir, 'scripts', 'marrow-launch.cjs'), ...args], {
       cwd: cwd || path.join(home, 'project'), input, encoding: 'utf8', timeout, env: envFor(pluginDir, home, extra),
+      ...(oddHome ? { isolationOddHome: true } : {}),
     }));
   }
-  function direct(pluginDir, { home, cwd, input = '', extra = {} }) {
+  function direct(pluginDir, { home, cwd, input = '', extra = {}, oddHome = false }) {
     const entry = path.join(pluginDir, 'node_modules', '@getmarrow', 'mcp', 'dist', 'cli.js');
     return take(spawnSync(process.execPath, [entry], {
       cwd: cwd || path.join(home, 'project'), input, encoding: 'utf8', timeout: 120000, env: envFor(pluginDir, home, extra),
+      ...(oddHome ? { isolationOddHome: true } : {}),
     }));
   }
   // Long-lived session: write lines, wait for the expected number of replies, check the process is still alive, then end stdin.
-  function session(pluginDir, { home, lines, replies, extra = {}, chunked = false, timeoutMs = 60000 }) {
+  function session(pluginDir, { home, lines, replies, extra = {}, chunked = false, timeoutMs = 60000, keepsArgv = false }) {
     return new Promise((resolve) => {
       const child = spawn(process.execPath, [path.join(pluginDir, 'scripts', 'marrow-launch.cjs'), 'mcp'], {
         cwd: path.join(home, 'project'), env: envFor(pluginDir, home, extra), stdio: ['pipe', 'pipe', 'pipe'],
+        ...(keepsArgv ? { isolationKeepsArgv: true } : {}),
       });
       let stdout = '';
       let stderr = '';
@@ -779,7 +821,7 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
         const keyFilesBefore = filesWithKey(home);
         const counted = (label) => path.join(work, `count-t24-${n}-${label}.json`);
         const run = (fn, dir, { input = MCP_INPUT, count = '' } = {}) => fn(dir, {
-          home: useHome, cwd: prepared.cwd || path.join(home, 'project'), input,
+          home: useHome, cwd: prepared.cwd || path.join(home, 'project'), input, oddHome: Boolean(prepared.home),
           extra: { ...nodeOptions(NETGUARD, ...(count ? [COUNT] : [])), ...(count ? { T2_COUNT_LOG: count } : {}), ...(prepared.extra || {}) },
         });
         const serverRun = kind === 'fleet' || kind === 'refused';
@@ -1021,7 +1063,7 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
       const home = makeHome('t27');
       const log = path.join(work, 't27-guard.json');
       const unguarded = await session(plug, { home, lines: [INIT(1), NOTIFIED, rpc(2, 'tools/list'), rpc(3, 'ping')].map((l) => `${l}\n`), replies: 3 });
-      const guarded = await session(plug, { home, lines: [INIT(1), NOTIFIED, rpc(2, 'tools/list'), rpc(3, 'ping')].map((l) => `${l}\n`), replies: 3, extra: { ...nodeOptions(GUARD), T2_GUARD_LOG: log } });
+      const guarded = await session(plug, { home, lines: [INIT(1), NOTIFIED, rpc(2, 'tools/list'), rpc(3, 'ping')].map((l) => `${l}\n`), replies: 3, keepsArgv: true, extra: { ...nodeOptions(GUARD), T2_GUARD_LOG: log } });
       const record = JSON.parse(fs.readFileSync(log, 'utf8'));
       result(guarded.status === 0 && guarded.stdout === unguarded.stdout && guarded.stderr === unguarded.stderr, 'T2-7 with a preload that throws on net/http/https/http2/tls/dns/dgram/child_process, the stub session is byte-identical');
       result(record.attempts.length === 0 && record.internalBlocked.length === 0, 'T2-7 no connect, request, lookup, spawn or require of those modules was attempted, and none is loaded', `attempts ${record.attempts.length}`);
@@ -1504,19 +1546,25 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
       'tools/check.cjs', 'tools/test-launcher-lock.cjs', 'tools/test-launcher-t2.cjs', 'tools/test-launcher.cjs', 'tools/test-session-check.cjs'];
     const differingFrom = (dir) => [...new Set([...walk(dir), ...walk(repo)])].filter((f) => !fs.existsSync(path.join(dir, f)) || !fs.existsSync(path.join(repo, f)) || !bytes(dir, f).equals(bytes(repo, f))).sort();
     const differingPrepin = differingFrom(prepinDir);
-    const expectedPrepin = [...new Set([...PIN_FILES, ...CODEX_PIN_FILES, ...TEST_COMMIT_FILES, ...BRANCH_FILES])].sort();
-    const expectedOld = [...new Set([...expected, ...PIN_FILES, ...CODEX_PIN_FILES])].sort();
+    const expectedPrepin = [...new Set([...PIN_FILES, ...CODEX_PIN_FILES, ...TEST_COMMIT_FILES, ...BRANCH_FILES, ...PUB_FILES])].sort();
+    const expectedOld = [...new Set([...expected, ...PIN_FILES, ...CODEX_PIN_FILES, ...TEST_COMMIT_FILES, ...PUB_FILES])].sort();
     const list = (got, want) => (got.length === want.length ? `${got.length} files` : '') + (JSON.stringify(got) === JSON.stringify(want) ? '' : ` unexpected: ${got.filter((f) => !want.includes(f)).join(',')} missing: ${want.filter((f) => !got.includes(f)).join(',')}`);
-    result(JSON.stringify(differingPrepin) === JSON.stringify(expectedPrepin) && JSON.stringify(differing) === JSON.stringify(expectedOld),
-      'T2-13 exactly these files differ: against ccbe0c32 the 15 pin files named in PIN_FILES (both package.json, package-lock.json, mcp-manifest.json, plugin.json, SKILL.md and marketplace.json, both READMEs, tools/mcp-pins/SOURCE.md), the 12 Codex files named in CODEX_PIN_FILES and the six BRANCH_FILES, nothing else; against be64842b the same fri-train set as before plus the nine more pin files and the 12 Codex files', `since ccbe0c32: ${list(differingPrepin, expectedPrepin)}; since be64842b: ${list(differing, expectedOld)}`);
+    // Every name added to the expected sets besides the pin files is pinned to its sha256: the 11 test-only files of the child-isolation commits (TEST_FILE_SHA256)
+    // and the two files of the pub-fix ride (PUB_FILE_SHA256). The pin tables must name exactly those files; this file holds the pins, so its own name stays allowed as before.
+    const PINNED_SHA256 = { ...TEST_FILE_SHA256, ...PUB_FILE_SHA256 };
+    const pinnedNames = Object.keys(PINNED_SHA256).sort();
+    const pinsCoverAddedFiles = JSON.stringify(pinnedNames) === JSON.stringify([...TEST_COMMIT_FILES.filter((f) => f !== 'tools/test-launcher-t2.cjs'), ...PUB_FILES].sort());
+    const pinMismatch = pinnedNames.filter((f) => !fs.existsSync(path.join(repo, f)) || crypto.createHash('sha256').update(bytes(repo, f)).digest('hex') !== PINNED_SHA256[f]);
+    result(JSON.stringify(differingPrepin) === JSON.stringify(expectedPrepin) && JSON.stringify(differing) === JSON.stringify(expectedOld) && pinsCoverAddedFiles && pinMismatch.length === 0,
+      'T2-13 exactly these files differ: against ccbe0c32 the 15 pin files named in PIN_FILES (both package.json, package-lock.json, mcp-manifest.json, plugin.json, SKILL.md and marketplace.json, both READMEs, tools/mcp-pins/SOURCE.md), the 12 Codex files named in CODEX_PIN_FILES, the six BRANCH_FILES and the test-only files named in TEST_COMMIT_FILES (the 11 added by the child-isolation commits only with the exact bytes pinned in TEST_FILE_SHA256) and the two PUB_FILES (SECURITY.md and .github/CODEOWNERS, only with the exact bytes pinned in PUB_FILE_SHA256), nothing else; against be64842b the same fri-train set as before plus the nine more pin files and the 12 Codex files', `since ccbe0c32: ${list(differingPrepin, expectedPrepin)}; since be64842b: ${list(differing, expectedOld)}; ${pinnedNames.length} added files pinned to their sha256: ${pinsCoverAddedFiles ? (pinMismatch.length ? `bytes differ: ${pinMismatch.join(',')}` : 'all equal') : 'the pin tables differ from TEST_COMMIT_FILES and PUB_FILES'}`);
     // Against the branch's own base exactly the BRANCH_FILES and the files of the 3.9.107 repin differ (PIN_FILES and CODEX_PIN_FILES): no hooks.json,
     // Codex launcher, .mcp.json, LICENSE, other doc or skill moved.
     if (!noticeBaseDir) { result(false, 'T2-13 the branch base (5c657b1c) is available for the moved-files comparison', noticeBaseError); } else {
       const differingBase = differingFrom(noticeBaseDir);
       const differingBaseline = differingFrom(baselineDir);
-      const expectedBase = [...new Set([...BRANCH_FILES, ...PIN_FILES, ...CODEX_PIN_FILES])].sort();
+      const expectedBase = [...new Set([...BRANCH_FILES, ...PIN_FILES, ...CODEX_PIN_FILES, ...TEST_COMMIT_FILES, ...PUB_FILES])].sort();
       result(JSON.stringify(differingBase) === JSON.stringify(expectedBase) && JSON.stringify(differingBaseline) === JSON.stringify(expectedBase),
-        'T2-13 against 5c657b1c (the base of this branch and the baseline) exactly the six BRANCH_FILES (both launchers, the session check, tools/check.cjs, this test file, tools/test-session-check.cjs), the 15 PIN_FILES and the 12 CODEX_PIN_FILES differ, nothing else',
+        'T2-13 against 5c657b1c (the base of this branch and the baseline) exactly the six BRANCH_FILES (both launchers, the session check, tools/check.cjs, this test file, tools/test-session-check.cjs), the 15 PIN_FILES, the 12 CODEX_PIN_FILES, the test-only files of TEST_COMMIT_FILES and the two PUB_FILES differ, nothing else',
         `since 5c657b1c: ${list(differingBase, expectedBase)}; since the baseline: ${list(differingBaseline, expectedBase)}`);
     }
     // No new Windows claim in either direction: existing Windows wording is untouched, except the one README line that was

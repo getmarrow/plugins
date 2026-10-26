@@ -5,6 +5,7 @@
 // (npm ci --ignore-scripts from package-lock.json), checks that hooks start without npx, then
 // measures wall time per hook call: the plugin launcher, the entrypoint started directly, and the
 // npx command that `npx @getmarrow/install` writes. Uses a temporary HOME; nothing else is written.
+require('../test/isolate.cjs'); // private HOME and spawn guard for every child this tool starts (test/child-isolation.cjs)
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');

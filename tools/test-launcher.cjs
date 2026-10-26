@@ -6,6 +6,7 @@
 // The cursor run uses plugins/marrow-cursor with Cursor's entrypoint names and deny format.
 // The install rule (PKG-L2): only `mcp`, the context hook and `prepare` install the private copy. Every tool
 // hook, PreToolUse above all, only looks for a verified copy and, with none, answers at once without npm.
+require('../test/isolate.cjs'); // private HOME and spawn guard for every child this tool starts (test/child-isolation.cjs)
 const { spawnSync, spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');

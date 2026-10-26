@@ -8,6 +8,7 @@
 //    official plugin as ok (a check that verified nothing is a failure).
 // 3. Self-test: a one-byte change to each pinned file, one file at a time, makes the same check exit 1
 //    and report that file as FAIL. This proves on every run that the gate can fail.
+require('../test/isolate.cjs'); // private HOME and spawn guard for every child this tool starts (test/child-isolation.cjs)
 const { createHash } = require('node:crypto');
 const { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
