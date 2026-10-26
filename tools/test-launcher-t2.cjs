@@ -73,13 +73,24 @@ const TEST_COMMIT_FILES = ['tools/test-launcher-t2.cjs'];
 // fleet-key refusal (both copies), the session check's notice, and the checks and tests that hold them. T2-13 names them so nothing else moves quietly.
 const NOTICE_BASE_REF = '5c657b1c959846161a21b2c2dff43e86ba52b786';
 const BRANCH_FILES = [
+  '.gitattributes',
   'plugins/marrow-cursor/scripts/marrow-launch.cjs',
   'plugins/marrow/scripts/marrow-launch.cjs',
   'plugins/marrow/scripts/marrow-session-check.cjs',
   'tools/check.cjs',
   'tools/test-launcher-t2.cjs',
+  'tools/test-launcher-win32.cjs',
   'tools/test-session-check.cjs',
 ];
+// The Windows CI commit (WIN26) sits on top of the candidate and adds only these files; T2-13 does not count them as a change of the
+// plugin (the workflow's own diff check proves that nothing else moved).
+const CI_FILES = new Set([
+  '.github/workflows/win26-hook-smoke.yml',
+  'tools/hook-smoke.cjs',
+  'tools/hook-smoke-cursor.cjs',
+  'tools/candidate/mcp-candidate.tgz',
+  'tools/candidate/mcp-candidate.sha256',
+]);
 // The only places a server's stdout carries its own version: result.serverInfo.version of the initialize answer and the two client_update
 // fields of the log notification. T2-4 normalizes exactly these paths, each only when it equals the pinned version string.
 const VERSION_PATHS = [['result', 'serverInfo', 'version'], ['params', 'data', 'client_update', 'installed_version'], ['params', 'data', 'client_update', 'latest_version']];
@@ -1476,21 +1487,21 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
     // The files that differ from the baseline are exactly the expected ones.
     const walk = (dir, rel = '') => fs.readdirSync(path.join(dir, rel), { withFileTypes: true }).flatMap((e) => {
       const r = rel ? `${rel}/${e.name}` : e.name;
-      if (['.git', 'node_modules'].includes(e.name)) return [];
+      if (['.git', 'node_modules'].includes(e.name) || CI_FILES.has(r)) return [];
       return e.isDirectory() ? walk(dir, r) : [r];
     });
     const all = new Set([...walk(oldDir), ...walk(repo)]);
     const differing = [...all].filter((f) => !fs.existsSync(path.join(oldDir, f)) || !fs.existsSync(path.join(repo, f)) || !bytes(oldDir, f).equals(bytes(repo, f))).sort();
-    const expected = ['README.md', 'plugins/marrow-cursor/.cursor-plugin/plugin.json', 'plugins/marrow-cursor/scripts/marrow-launch.cjs', 'plugins/marrow-cursor/skills/marrow/SKILL.md',
+    const expected = ['.gitattributes', 'README.md', 'plugins/marrow-cursor/.cursor-plugin/plugin.json', 'plugins/marrow-cursor/scripts/marrow-launch.cjs', 'plugins/marrow-cursor/skills/marrow/SKILL.md',
       'plugins/marrow/.claude-plugin/plugin.json', 'plugins/marrow/scripts/marrow-launch.cjs', 'plugins/marrow/scripts/marrow-session-check.cjs', 'plugins/marrow/skills/marrow/SKILL.md',
-      'tools/check.cjs', 'tools/test-launcher-lock.cjs', 'tools/test-launcher-t2.cjs', 'tools/test-launcher.cjs', 'tools/test-session-check.cjs'];
+      'tools/check.cjs', 'tools/test-launcher-lock.cjs', 'tools/test-launcher-t2.cjs', 'tools/test-launcher-win32.cjs', 'tools/test-launcher.cjs', 'tools/test-session-check.cjs'];
     const differingFrom = (dir) => [...new Set([...walk(dir), ...walk(repo)])].filter((f) => !fs.existsSync(path.join(dir, f)) || !fs.existsSync(path.join(repo, f)) || !bytes(dir, f).equals(bytes(repo, f))).sort();
     const differingPrepin = differingFrom(prepinDir);
     const expectedPrepin = [...new Set([...PIN_FILES, ...TEST_COMMIT_FILES, ...BRANCH_FILES])].sort();
     const expectedOld = [...new Set([...expected, ...PIN_FILES])].sort();
     const list = (got, want) => (got.length === want.length ? `${got.length} files` : '') + (JSON.stringify(got) === JSON.stringify(want) ? '' : ` unexpected: ${got.filter((f) => !want.includes(f)).join(',')} missing: ${want.filter((f) => !got.includes(f)).join(',')}`);
     result(JSON.stringify(differingPrepin) === JSON.stringify(expectedPrepin) && JSON.stringify(differing) === JSON.stringify(expectedOld),
-      'T2-13 exactly these files differ: against ccbe0c32 the 15 pin files named in PIN_FILES (both package.json, package-lock.json, mcp-manifest.json, plugin.json, SKILL.md and marketplace.json, both READMEs, tools/mcp-pins/SOURCE.md) and the six BRANCH_FILES, nothing else; against be64842b the same fri-train set as before plus the nine more pin files', `since ccbe0c32: ${list(differingPrepin, expectedPrepin)}; since be64842b: ${list(differing, expectedOld)}`);
+      'T2-13 exactly these files differ: against ccbe0c32 the 15 pin files named in PIN_FILES (both package.json, package-lock.json, mcp-manifest.json, plugin.json, SKILL.md and marketplace.json, both READMEs, tools/mcp-pins/SOURCE.md) and the eight BRANCH_FILES, nothing else; against be64842b the same fri-train set as before plus the nine more pin files', `since ccbe0c32: ${list(differingPrepin, expectedPrepin)}; since be64842b: ${list(differing, expectedOld)}`);
     // Against the branch's own base exactly the BRANCH_FILES and the files of the 3.9.107 repin differ (PIN_FILES): no hooks.json,
     // Codex file, .mcp.json, LICENSE, other doc or skill moved.
     if (!noticeBaseDir) { result(false, 'T2-13 the branch base (5c657b1c) is available for the moved-files comparison', noticeBaseError); } else {
@@ -1498,7 +1509,7 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
       const differingBaseline = differingFrom(baselineDir);
       const expectedBase = [...new Set([...BRANCH_FILES, ...PIN_FILES])].sort();
       result(JSON.stringify(differingBase) === JSON.stringify(expectedBase) && JSON.stringify(differingBaseline) === JSON.stringify(expectedBase),
-        'T2-13 against 5c657b1c (the base of this branch and the baseline) exactly the six BRANCH_FILES (both launchers, the session check, tools/check.cjs, this test file, tools/test-session-check.cjs), and the 15 PIN_FILES differ, nothing else',
+        'T2-13 against 5c657b1c (the base of this branch and the baseline) exactly the eight BRANCH_FILES (both launchers, the session check, tools/check.cjs, this test file, tools/test-session-check.cjs, .gitattributes, tools/test-launcher-win32.cjs), and the 15 PIN_FILES differ, nothing else',
         `since 5c657b1c: ${list(differingBase, expectedBase)}; since the baseline: ${list(differingBaseline, expectedBase)}`);
     }
     // No new Windows claim in either direction: existing Windows wording is untouched, except the one README line that was
