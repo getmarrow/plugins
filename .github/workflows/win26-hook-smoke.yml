@@ -1,0 +1,60 @@
+name: win26-hook-smoke
+
+# Real windows-latest, macos-latest and ubuntu-latest checks of the Cursor plugin (WIN26 CUR + CI). Runs only for a push to ci/win26-plugins.
+# No secrets, no Marrow key, no write permission. Rows print as an id and PASS|FAIL only (never a command, path or message).
+# The job fails on any FAIL row that is not tagged expected-on-old-MCP.
+on:
+  push:
+    branches: [ci/win26-plugins]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+      # The CI commit sits on top of the candidate: it may change only the workflow, the two harness files and the candidate slots.
+      - name: The last commit changes only CI files
+        shell: bash
+        run: node tools/hook-smoke.cjs --check-ci-commit
+      # Candidate: a committed tarball wins. Otherwise the published package the plugin pins (version read from its package.json,
+      # integrity compared with scripts/mcp-manifest.json by the harness); a Windows FAIL of an MCP-lane row is then expected-on-old-MCP.
+      - name: Pack the MCP candidate
+        id: pack
+        shell: bash
+        run: |
+          if [ -f tools/candidate/mcp-candidate.tgz ]; then
+            echo "tgz=${GITHUB_WORKSPACE}/tools/candidate/mcp-candidate.tgz" >> "$GITHUB_OUTPUT"
+            echo "published=" >> "$GITHUB_OUTPUT"
+          else
+            version="$(node -p "require('./plugins/marrow-cursor/package.json').dependencies['@getmarrow/mcp']")"
+            cd "$RUNNER_TEMP"
+            name="$(npm pack "@getmarrow/mcp@${version}" --ignore-scripts --silent | tail -n 1)"
+            echo "tgz=${RUNNER_TEMP}/${name}" >> "$GITHUB_OUTPUT"
+            echo "published=--published" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Hook smoke (id + PASS|FAIL rows)
+        shell: bash
+        env:
+          CANDIDATE_TGZ: ${{ steps.pack.outputs.tgz }}
+          PUBLISHED_FLAG: ${{ steps.pack.outputs.published }}
+        run: node tools/hook-smoke.cjs "win26-hook-smoke-${RUNNER_OS}.json" --candidate "$CANDIDATE_TGZ" $PUBLISHED_FLAG | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: win26-hook-smoke-${{ runner.os }}
+          path: win26-hook-smoke-${{ runner.os }}.json
+          if-no-files-found: warn
