@@ -1,7 +1,7 @@
 {
   "name": "marrow",
-  "version": "0.1.1",
-  "description": "Approvals, policy and receipts for agent actions. Adds Marrow's Codex approval hooks (pinned @getmarrow/mcp 3.9.102), the Marrow MCP server and a short skill. Hooks are cooperative, client-reported control.",
+  "version": "0.1.3",
+  "description": "Approvals, policy and receipts for agent actions. Adds Marrow's Codex approval hooks (pinned @getmarrow/mcp 3.9.107), the Marrow MCP server and a short skill. Hooks are cooperative, client-reported control.",
   "author": {
     "name": "Marrow",
     "url": "https://getmarrow.ai"
@@ -37,8 +37,8 @@
   },
   "metadata": {
     "pins": {
-      "@getmarrow/mcp": "3.9.102",
-      "@getmarrow/sdk": "3.7.65"
+      "@getmarrow/mcp": "3.9.107",
+      "@getmarrow/sdk": "3.7.67"
     }
   }
 }
