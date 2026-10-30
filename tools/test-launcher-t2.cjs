@@ -3,23 +3,26 @@
 // Called by tools/test-launcher.cjs, which counts the rows; it can also run alone:
 //   node tools/test-launcher-t2.cjs [claude|cursor]
 // Environment rules:
-//   * Every child gets an env built here from a short allowlist plus the row's own values, never process.env as a whole.
+//   * Every child gets an env built by test/npm-env.cjs (a short allowlist, a private HOME-independent offline npm configuration and
+//     the loopback network guard of test/net-guard.cjs first in NODE_OPTIONS) plus the row's own values, never process.env as a whole.
 //   * Keys are dummy values generated at runtime, only inside temp HOMEs. The key bytes are never printed; the last row scans
 //     every captured stdout and stderr for them.
-//   * Keyed rows point the Marrow API at https://127.0.0.1:9 (the server accepts https only; nothing listens there) and load a
-//     preload that refuses non-loopback connects, so nothing leaves the host.
-//   * npm installs use npm_config_cache from the parent (a cache seeded with the pinned tarballs keeps them offline).
+//   * Keyed rows point the Marrow API at https://127.0.0.1:9 (the server accepts https only; nothing listens there) and run under the
+//     shared guard, which refuses and logs every non-loopback connect, lookup and IP literal, so nothing leaves the host.
+//   * npm installs run offline from a seeded COPY of the cache named by npm_config_cache (it must hold the pinned tarballs).
 // Differential rows (T2-4, T2-5, T2-6, T2-10, T2-13) compare against the baseline commit 5c657b1c, the plugins final that pins the
 // PUBLISHED @getmarrow/mcp 3.9.106: set T2_BASELINE_DIR to an extracted tree of it, or leave it unset and the rows extract
 // T2_BASELINE_REF (default: 5c657b1c) with `git archive`. Without a baseline those rows fail loudly. A baseline whose pinned MCP is
 // not BASELINE_VERSION aborts the run (the commit be64842b pinned 3.9.105, which was never published, so it can not be installed).
 // T2-13 also compares against PREPIN_REF, the commit just before the 3.9.106 pin commit, and against OLD_REF (be64842b), which is
 // only unpacked with `git archive` and compared as files: it is never installed or run (no override).
-// The baseline's pinned server is 3.9.106 and this tree's is 3.9.108: the rows name the 3.9.108 behaviour as measured from the
+// The baseline's pinned server is 3.9.106 and this tree's is 3.9.109: the rows name the 3.9.109 behaviour as measured from the
 // pinned tarball (keyless start, refusal text), they never assume it. The only value of the keyless stub's answer that differs
 // from the baseline's is its serverInfo.version, which each side reports as its own pin.
 // Optional T2_REPORT_DIR: a JSON file with the matrices and texts of the run is written there.
 require('../test/isolate.cjs'); // private HOME and spawn guard for every child this tool starts (test/child-isolation.cjs)
+const netGuard = require('../test/net-guard.cjs'); // the one loopback network guard
+const npmEnvironment = require('../test/npm-env.cjs'); // private npm environment + loopback network guard for every child
 const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -31,11 +34,11 @@ const BASELINE_REF = process.env.T2_BASELINE_REF || '5c657b1c959846161a21b2c2dff
 const PREPIN_REF = 'ccbe0c329365e8903e8c2b9227e2c17050e512f9';
 // The fri-train tip that pinned MCP 3.9.105 (never published). T2-13 keeps it as a file anchor only: unpacked, compared, never installed.
 const OLD_REF = 'be64842b6120af91edc44854569124b38730614f';
-const PINNED_VERSION = '3.9.108'; // @getmarrow/mcp as pinned by this tree
+const PINNED_VERSION = '3.9.109'; // @getmarrow/mcp as pinned by this tree
 const BASELINE_VERSION = '3.9.106'; // @getmarrow/mcp as pinned by the baseline 5c657b1c (published)
 const OLD_VERSION = '3.9.105'; // @getmarrow/mcp as pinned by PREPIN_REF and OLD_REF (never published)
 const DEAD_URL = 'https://127.0.0.1:9';
-// The pinned 3.9.108 server's no-key refusal (the same text as 3.9.106 and 3.9.107: dist/cli.js is byte-identical in the three packs), whole stderr, measured from the pinned tarball (dist/cli.js serverKeyRequiredText). In the Claude plugin
+// The pinned 3.9.109 server's no-key refusal (the same text as 3.9.106 to 3.9.109; T2-14 finds it in the pinned dist), whole stderr, measured from the pinned tarball (dist/cli.js serverKeyRequiredText). In the Claude plugin
 // (CLAUDE_PLUGIN_ROOT set) it is PLUGIN_KEY_ERROR + GET_A_KEY_LINE; Cursor sets no CLAUDE_PLUGIN_ROOT, so it gets the plain text with
 // the resolver's exactFix. The T2-14 oracle row checks that these strings are in the pinned dist.
 const GET_A_KEY_URL = 'https://getmarrow.ai/signup';
@@ -48,7 +51,7 @@ const FLEET_REFUSAL = 'Error: MARROW_API_KEY required. Marrow plugin: a fleet ke
   + 'then restart Claude Code or Cursor. The plugin hooks still apply without a key. Do not run marrow-mcp setup or activate for the plugin.\n';
 const REQUIRED_LINE_CLAUDE = `Error: MARROW_API_KEY required. ${PLUGIN_KEY_STEPS}\n${GET_A_KEY_LINE}\n`;
 const REQUIRED_LINE_CURSOR = `Error: MARROW_API_KEY environment variable is required\n${NO_KEY_FIX}\n${GET_A_KEY_LINE}\n`;
-// The pinned 3.9.108 keyless server's own notice (the same text as 3.9.106 and 3.9.107; dist/keyless-server.js is byte-identical in the three packs, KEYLESS_NOTICE): it tells a real server run from the launcher's stub.
+// The pinned 3.9.109 keyless server's own notice (the same text as 3.9.106 to 3.9.109; the T2-4 and T2-5 rows measure it from the pinned server, KEYLESS_NOTICE): it tells a real server run from the launcher's stub.
 const SERVER_KEYLESS_NOTICE = 'Marrow: no Marrow key on this machine, so the Marrow MCP server started with no tools. Marrow hooks, where they are set up, keep their free keyless seatbelt.';
 // The files the 3.9.106 pin commit moved against PREPIN_REF, each named, plus the test-only files moved by the test commits (the T2 rows, then the child-isolation files), each named. Naming them is the rule: a product file moving still fails.
 // Any other file moving fails T2-13.
@@ -76,6 +79,8 @@ const TEST_COMMIT_FILES = [
   'test/fixtures/git-push-swallow.cjs',
   'test/fixtures/isolation-probe.cjs',
   'test/isolate.cjs',
+  'test/net-guard.cjs',
+  'test/npm-env.cjs',
   'tools/bench-hooks.cjs',
   'tools/pins-check-ci.cjs',
   'tools/test-launcher-lock.cjs',
@@ -83,20 +88,22 @@ const TEST_COMMIT_FILES = [
   'tools/test-launcher.cjs',
   'tools/test-session-check.cjs',
 ];
-// F8 (owner-decided: OWNER-DECISIONS-20261024.md item 4): the 11 test-only files the child-isolation commits added are pinned to their sha256, so T2-13 accepts exactly these
+// F8 (owner-decided: OWNER-DECISIONS-20261024.md item 4): the 13 test-only files the child-isolation commits added are pinned to their sha256, so T2-13 accepts exactly these
 // bytes and not any content under these names. This file holds the pins, so it cannot pin itself: its own name stays allowed as before.
 const TEST_FILE_SHA256 = {
   'test/child-isolation.cjs': 'ea1739f63ad04faddf7317695da34a6bd44dfd9fce05536368cdb1ef7d687107',
-  'test/child-isolation.test.cjs': 'ae07325b4f814db7c5a8377b8df662de27bc9f29e53b70fe7f2bc15c8cfc9009',
+  'test/child-isolation.test.cjs': '85ee48ab3ca3a4322b198c457a3712ceceaf2f95c9dbdf947008d86bda361ecc',
   'test/fixtures/git-push-local-control.cjs': '5da537afc24b7a32fb4e4a7242776a0e0a889c05d502777d80c2487d7b2c9cb2',
   'test/fixtures/git-push-swallow.cjs': '2d28c87eec0570d5f2cc50036df057df1d0e20cd1a7f92eb4ab9976aa70f8b8e',
   'test/fixtures/isolation-probe.cjs': 'aebbe483d52d3023ee487b126bdb9530a07c3e85f6d4c0415182dbc88c6367f2',
   'test/isolate.cjs': '3ee00aa907cbb7f220ba2a73b8cc9952349877e0d31e501f8bc9e5349aead06c',
+  'test/net-guard.cjs': 'c4875368e56c853c0148fc62368b04e05de60e9be616c02f011b3bb27c7aac11',
+  'test/npm-env.cjs': '0896cdc9494afbdc5b8be86298c1c1cd426193b1f3dfa825f4fdbfcb30141566',
   'tools/bench-hooks.cjs': '3b7d63f58871145cc378c47abaf29940b74dc8ae78538cb766a07ab4ae1e47a5',
   'tools/pins-check-ci.cjs': '2f89935cfcd52f6cd166008051e2df616cb7fa277671c712eb191ad9833ed1d0',
-  'tools/test-launcher-lock.cjs': '8fb993ac4802bc61e3116c72fc1673c17c2f05ea319b361b9b4e6e6f83a09cc0',
-  'tools/test-launcher.cjs': '4b4f75206e2bffc576425a04769b129527b773e1bfa1b0cf9a4c1a00129d2400',
-  'tools/test-session-check.cjs': 'a925614bd51a5ec0b663a5f98f62f91092fef301408804f7744b5172792916f3',
+  'tools/test-launcher-lock.cjs': 'a39ff03932bb3e80b66bf25616cecf0e293ceb33aebb9c9c11ce3b1caa8f2940',
+  'tools/test-launcher.cjs': '84fd0439fdf2340d05c0e547784f5ce073001e608fb60e2710b6641472b9c9c6',
+  'tools/test-session-check.cjs': 'db5a4308d0dbe27b2793b21cbe384ade85011241e7c70e2cf316b7168ab635ea',
 };
 // The two files of the pub-fix ride (0de66126): SECURITY.md and the CODEOWNERS file. T2-13 is a closed set, so they are named and pinned to
 // their sha256 the same way; no other name is added for them.
@@ -105,7 +112,7 @@ const PUB_FILE_SHA256 = {
   'SECURITY.md': '3d7059a171ae6886ef40ba04c89cc01a59ec9967507a290bcd22d770c1deb08f',
 };
 const PUB_FILES = Object.keys(PUB_FILE_SHA256).sort();
-// The two vendored files of the MCP 3.9.108 pack that moved with the repin (tools/mcp-pins): the pack's own dist/codex-plugin-pins.js and the SHA256SUMS that holds its digest. T2-13 is a closed set,
+// The two vendored files of the MCP 3.9.109 pack that moved with the repin (tools/mcp-pins): the pack's own dist/codex-plugin-pins.js and the SHA256SUMS that holds its digest. T2-13 is a closed set,
 // so they are named and pinned to their sha256 the same way (F8 pattern). The check script beside them is byte-identical to the base and needs no name; SOURCE.md is already in PIN_FILES.
 const VENDOR_FILE_SHA256 = {
   'tools/mcp-pins/SHA256SUMS': 'a91febc20df2497a78e447610627ee7299e3cc51d22ff3864f03a28ec4ae6d14',
@@ -116,11 +123,13 @@ const VENDOR_FILES = Object.keys(VENDOR_FILE_SHA256).sort();
 // fleet-key refusal (both copies), the session check's notice, and the checks and tests that hold them. T2-13 names them so nothing else moves quietly.
 const NOTICE_BASE_REF = '5c657b1c959846161a21b2c2dff43e86ba52b786';
 const BRANCH_FILES = [
+  '.gitattributes',
   'plugins/marrow-cursor/scripts/marrow-launch.cjs',
   'plugins/marrow/scripts/marrow-launch.cjs',
   'plugins/marrow/scripts/marrow-session-check.cjs',
   'tools/check.cjs',
   'tools/test-launcher-t2.cjs',
+  'tools/test-launcher-win32.cjs',
   'tools/test-session-check.cjs',
 ];
 // The files the 3.9.107 repin moved in the two Codex plugins (the Codex plugins pin MCP 3.9.107 and SDK 3.7.67 with the other two hosts), each named:
@@ -156,6 +165,15 @@ const CODEX_FILE_SHA256 = {
   'codex/marrow/skills/marrow/SKILL.md': 'ec13a67d29dfc7f266c4e484f2e25b68bbed60025812912c3bc96a4c2a8209d8',
   'codex/marrow/skills/marrow/references/hosts.md': 'aea8c2be3feeae692677cde1b46487e4493620718d7aee23fd4265ff62d4a155',
 };
+// The Windows CI commit (WIN26) sits on top of the candidate and adds only these files; T2-13 does not count them as a change of the
+// plugin (the workflow's own diff check proves that nothing else moved).
+const CI_FILES = new Set([
+  '.github/workflows/win26-hook-smoke.yml',
+  'tools/hook-smoke.cjs',
+  'tools/hook-smoke-cursor.cjs',
+  'tools/candidate/mcp-candidate.tgz',
+  'tools/candidate/mcp-candidate.sha256',
+]);
 // The only places a server's stdout carries its own version: result.serverInfo.version of the initialize answer and the two client_update
 // fields of the log notification. T2-4 normalizes exactly these paths, each only when it equals the pinned version string.
 const VERSION_PATHS = [['result', 'serverInfo', 'version'], ['params', 'data', 'client_update', 'installed_version'], ['params', 'data', 'client_update', 'latest_version']];
@@ -170,7 +188,7 @@ function start({ host, repo, result: countRow }) {
   const source =path.join(repo, 'plugins', CURSOR ? 'marrow-cursor' : 'marrow');
   const rootVar = CURSOR ? 'CURSOR_PLUGIN_ROOT' : 'CLAUDE_PLUGIN_ROOT';
   const work = fs.mkdtempSync(path.join(os.tmpdir(), `marrow-t2-${host}-`));
-  const cache = process.env.npm_config_cache || path.join(work, 'npm-cache');
+  const NPM = npmEnvironment.create({ root: work });
   const KEY = `mk_${crypto.randomBytes(24).toString('hex')}`;
   const captured = [];
   const report = { host, rows: [] };
@@ -183,14 +201,10 @@ function start({ host, repo, result: countRow }) {
     : { pre: 'claude-pre-action-hook', post: 'claude-hook', session: 'claude-session-hook', ctx: 'claude-context-hook', extra: ['claude-permission-request-hook'] };
 
   // ---- environment and plugin copies -------------------------------------------------------------------
-  function env(extra = {}) {
-    const out = {};
-    for (const name of ['PATH', 'LANG', 'TMPDIR', 'SystemRoot', 'npm_config_registry']) if (process.env[name]) out[name] = process.env[name];
-    return { ...out, npm_config_cache: cache, npm_config_update_notifier: 'false', ...extra };
-  }
+  const env = (extra = {}) => NPM.env(extra);
   const forceRemove = (dir) => {
     if (POSIX) spawnSync('chmod', ['-R', 'u+rwX', dir], { stdio: 'ignore' });
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 }); // a hook child that is still finishing may write into a folder while it is removed
   };
   const freshDir = (dir) => {
     forceRemove(dir);
@@ -238,24 +252,7 @@ function start({ host, repo, result: countRow }) {
     fs.writeFileSync(file, text);
     return file;
   };
-  const NETGUARD = preload('netguard.cjs', `'use strict';
-const net = require('net');
-const dns = require('dns');
-const local = (host) => host === undefined || host === null || host === '' || host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
-const connect = net.Socket.prototype.connect;
-net.Socket.prototype.connect = function guarded(...args) {
-  const first = args[0];
-  const ipc = typeof first === 'string' || (first && typeof first === 'object' && typeof first.path === 'string');
-  const host = first && typeof first === 'object' ? first.host : (typeof args[1] === 'string' ? args[1] : undefined);
-  if (!ipc && !local(host)) throw new Error('t2 netguard: non-loopback connect refused');
-  return connect.apply(this, args);
-};
-const lookup = dns.lookup;
-dns.lookup = function guarded(host, ...rest) {
-  if (!local(host)) throw new Error('t2 netguard: non-loopback lookup refused');
-  return lookup.call(this, host, ...rest);
-};
-`);
+  const NETGUARD = netGuard.GUARD_PATH; // the shared guard (test/net-guard.cjs); NPM.env() also puts it first in every NODE_OPTIONS
   const THROW = preload('throw-resolver.cjs', `'use strict';
 const Module = require('module');
 const load = Module._load;
@@ -358,7 +355,7 @@ for (const name of ['open', 'openSync']) wrap(fs, name, (args) => { if (writes(a
 wrap(fs.promises, 'open', (args) => { if (writes(args[1])) counts.fsWrite.push('promises.open'); });
 process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
 `);
-  const nodeOptions = (...files) => ({ NODE_OPTIONS: files.map((f) => `--require=${f}`).join(' ') });
+  const nodeOptions = (...files) => ({ NODE_OPTIONS: files.filter((f) => f !== netGuard.GUARD_PATH).map((f) => `--require=${f}`).join(' ') });
   // The numbers COUNT recorded for one run: all four network counters and the child-process counter must be 0 for a run that owes nothing.
   const countsOf = (file) => {
     try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
@@ -464,8 +461,12 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
   // Long-lived session: write lines, wait for the expected number of replies, check the process is still alive, then end stdin.
   function session(pluginDir, { home, lines, replies, extra = {}, chunked = false, timeoutMs = 60000, keepsArgv = false }) {
     return new Promise((resolve) => {
+      // keepsArgv (T2-7 only): the row's own preload refuses every net, dns, http and child_process use, which is stricter than the shared
+      // loopback guard and must see a process that loads none of those modules; the shared guard loads dns and dgram to patch them, so it is left out here.
+      const sessionEnv = envFor(pluginDir, home, extra);
+      if (keepsArgv) sessionEnv.NODE_OPTIONS = String(sessionEnv.NODE_OPTIONS || '').split(' ').filter((word) => word !== `--require=${netGuard.GUARD_PATH}`).join(' ');
       const child = spawn(process.execPath, [path.join(pluginDir, 'scripts', 'marrow-launch.cjs'), 'mcp'], {
-        cwd: path.join(home, 'project'), env: envFor(pluginDir, home, extra), stdio: ['pipe', 'pipe', 'pipe'],
+        cwd: path.join(home, 'project'), env: sessionEnv, stdio: ['pipe', 'pipe', 'pipe'],
         ...(keepsArgv ? { isolationKeepsArgv: true } : {}),
       });
       let stdout = '';
@@ -617,7 +618,7 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
   const slowTimeout = POSIX ? slowRun('npm-timeout', () => ({
     pluginDir: plugin({ modules: false }), home: makeHome('slow-timeout'), node: noNpmNode, extra: { PATH: `${fakeBin}:/usr/bin:/bin` },
   })) : Promise.resolve(null);
-  const lockOwner = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 400000)'], { stdio: 'ignore' });
+  const lockOwner = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 400000)'], { stdio: 'ignore', env: env() });
   const slowLock = slowRun('lock-timeout', () => {
     const pluginDir = plugin({ modules: false });
     const home = makeHome('slow-lock');
@@ -686,7 +687,7 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
     // T2-4 equivalence matrix
     {
       const states = [];
-      // Every state has an explicit kind: what the launcher does with it and what the pinned 3.9.108 server does, never inferred from the oracle.
+      // Every state has an explicit kind: what the launcher does with it and what the pinned 3.9.109 server does, never inferred from the oracle.
       //   keyless: a clear "no key". The launcher serves the stub (T2-4c: keyless() true). The pinned server, started directly, answers keyless:
       //     0 tools, a tools/call error, no request, no file written (measured here from the pinned tarball). The baseline (5c657b1c) serves the same stub.
       //   fleet:   a MARROW_KEY_<NAME> variable is set and no direct key. It is no usable key and never the stub's case. The launcher refuses with FLEET_REFUSAL
@@ -809,20 +810,22 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
         add('HOME is another account\'s folder (/root)', (h) => (fs.existsSync('/root') ? { home: '/root', cwd: h } : null));
       }
       const rows = [];
-      // The crash the badurl states print: the same statement in each pinned dist (baseline 3.9.106 and candidate 3.9.108, both at line 603). The frames are equal
-      // once each side's exact position (dist/cli.js:603:58) is read as that statement; the test reads the statement from both dists, so a frame that
-      // moved is measured, not assumed.
+      // The crash the badurl states print: the same statement in each pinned dist (the baseline 3.9.106 has it at line 603, the candidate 3.9.109 at line 628). The frames are equal
+      // once each side's exact position (dist/cli.js:603:58 on the baseline, dist/cli.js:628:58 on the candidate) is read as that statement; the test reads the statement from both
+      // dists, so a frame that moved is measured, not assumed.
       const distLine = (dir, line) => (fs.readFileSync(path.join(dir, 'node_modules', '@getmarrow', 'mcp', 'dist', 'cli.js'), 'utf8').split('\n')[line - 1] || '');
       const CRASH_STATEMENT = '(0, index_1.validateBaseUrl)(rawBaseUrl)';
-      const crashFramesOk = Boolean(baselinePlug) && distLine(baselinePlug, 603).includes(CRASH_STATEMENT) && distLine(plug, 603).includes(CRASH_STATEMENT);
+      const BASELINE_CRASH_LINE = 603;
+      const PINNED_CRASH_LINE = 628;
+      const crashFramesOk = Boolean(baselinePlug) && distLine(baselinePlug, BASELINE_CRASH_LINE).includes(CRASH_STATEMENT) && distLine(plug, PINNED_CRASH_LINE).includes(CRASH_STATEMENT);
       // A crash prints a stack trace that names the plugin folder and the launcher's own frames (line numbers); only those and the pinned frame differ.
-      const crashText = (t) => t.replace(/plugin-\d+/g, 'plugin-#').replace(/marrow-launch\.cjs:\d+:\d+/g, 'marrow-launch.cjs:#:#')
-        .split('dist/cli.js:603:58').join('dist/cli.js:#:#');
+      const crashText = (t, line) => t.replace(/plugin-\d+/g, 'plugin-#').replace(/marrow-launch\.cjs:\d+:\d+/g, 'marrow-launch.cjs:#:#')
+        .split(`dist/cli.js:${line}:58`).join('dist/cli.js:#:#');
       const KIND_TEXT = {
-        keyless: 'the stub runs (and so does the baseline, its answer equal apart from the one exact version field) and the pinned 3.9.108 server, started directly, answers keyless: 0 tools, a tools/call error, no request, no file written',
+        keyless: 'the stub runs (and so does the baseline, its answer equal apart from the one exact version field) and the pinned 3.9.109 server, started directly, answers keyless: 0 tools, a tools/call error, no request, no file written',
         fleet: 'the launcher refuses (never the stub, never the server): exit 1 like the pinned server, nothing on stdout, exactly the fleet refusal text (no npx, no unpinned spec), no request, no key echoed',
-        refused: 'the server (never the stub) runs with no key: exit 1, nothing on stdout, the exact 3.9.108 refusal, no request, the refused file\'s key in no stream and in no new file',
-        keyed: 'the real server runs and its bytes equal the baseline\'s (5c657b1c, pinned 3.9.106) apart from the three exact version fields, which carry 3.9.106 there and 3.9.108 here',
+        refused: 'the server (never the stub) runs with no key: exit 1, nothing on stdout, the exact 3.9.109 refusal, no request, the refused file\'s key in no stream and in no new file',
+        keyed: 'the real server runs and its bytes equal the baseline\'s (5c657b1c, pinned 3.9.106) apart from the three exact version fields, which carry 3.9.106 there and 3.9.109 here',
         badurl: 'the real server runs and crashes as the baseline does: exit 1, nothing on stdout, the same stack apart from the plugin folder and the launcher\'s own frames',
       };
       // The exact refusal. Cursor sets no CLAUDE_PLUGIN_ROOT, so for a refused owner file its server adds one line, 'Ignored the Marrow key in <file>: <why>',
@@ -872,7 +875,7 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
           const c = countsOf(log);
           checks.stubServes = cand.status === 0 && messages(cand).length === 2 && toolCount(cand) === 0;
           // The stub reports the pinned version in its initialize answer (serverInfo.version): that one exact field is 3.9.106 on the baseline and
-          // 3.9.108 here; status, stderr and every other byte of stdout are equal.
+          // 3.9.109 here; status, stderr and every other byte of stdout are equal.
           checks.stubSameAsBaseline = sameApartFromVersions(oracleA, cand);
           checks.pinnedKeyless = d.status === 0 && dm.length === 3 && dm.every(isRpc) && Boolean(byId(1).result) && byId(1).result.serverInfo.version === PINNED_VERSION
             && toolCount(d) === 0 && Boolean(byId(3).error) && byId(3).result === undefined && byId(3).error.code === -32602 && byId(3).error.message === 'This server has no tools.'
@@ -908,7 +911,7 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
         } else if (oracleA !== null && kind === 'badurl') {
           const d = run(direct, plug);
           checks.baselineCrashed = oracleA.status === 1 && oracleA.stdout === '' && baselineOutcome(oracleA) === 'other';
-          checks.sameCrash = crashFramesOk && cand.status === oracleA.status && cand.stdout === oracleA.stdout && crashText(cand.stderr) === crashText(oracleA.stderr);
+          checks.sameCrash = crashFramesOk && cand.status === oracleA.status && cand.stdout === oracleA.stdout && crashText(cand.stderr, PINNED_CRASH_LINE) === crashText(oracleA.stderr, BASELINE_CRASH_LINE);
           checks.directCrashes = d.status === 1 && d.stdout === '' && d.stderr !== REQUIRED_LINE && d.stderr.includes('MARROW_BASE_URL');
         }
         const failed = Object.keys(checks).filter((k) => !checks[k]);
@@ -929,14 +932,14 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
         // The regime of the real rows: baseline and candidate both carry the pinned version (same pin, the only masked value).
         const sameEq = (a, b) => sameApartFromVersions(a, b, PINNED_VERSION, PINNED_VERSION);
         return same(base, good)
-          && !same(base, stream('3.9.1080')) && !same(base, stream('v3.9.108')) && !same(base, stream('3.9.108 ')) && !same(base, stream('3.9.109'))
-          && !same(base, stream(PINNED_VERSION, {}, '3.9.1080', PINNED_VERSION)) && !same(base, stream(PINNED_VERSION, {}, PINNED_VERSION, 'v3.9.108'))
+          && !same(base, stream('3.9.1090')) && !same(base, stream('v3.9.109')) && !same(base, stream('3.9.109 ')) && !same(base, stream('3.9.110'))
+          && !same(base, stream(PINNED_VERSION, {}, '3.9.1090', PINNED_VERSION)) && !same(base, stream(PINNED_VERSION, {}, PINNED_VERSION, 'v3.9.109'))
           && !same(base, stream(PINNED_VERSION, {}, OLD_VERSION, PINNED_VERSION)) && !same(stream('3.9.104'), good)
           && !same(stream(OLD_VERSION, { other: OLD_VERSION }), stream(PINNED_VERSION, { other: PINNED_VERSION }))
           && !same(base, stream(PINNED_VERSION, { extra: 1 })) && !same(base, { ...good, stdout: good.stdout.replace('"name":"marrow"', '"name":"marrow2"') })
           && !same(base, { ...good, stdout: good.stdout.replace('"id":1', '"id": 1') }) && !same(base, { ...good, stdout: good.stdout.slice(0, -1) })
           && !same(base, { ...good, status: 1 }) && !same(base, { ...good, stderr: 'x' })
-          && sameEq(good, stream(PINNED_VERSION)) && !sameEq(good, stream(OLD_VERSION)) && !sameEq(good, stream('3.9.109')) && !sameEq(good, stream('v3.9.108'))
+          && sameEq(good, stream(PINNED_VERSION)) && !sameEq(good, stream(OLD_VERSION)) && !sameEq(good, stream('3.9.110')) && !sameEq(good, stream('v3.9.109'))
           && !sameEq(good, stream(PINNED_VERSION, {}, OLD_VERSION, PINNED_VERSION)) && !sameEq(good, stream(PINNED_VERSION, { extra: 1 }))
           && !sameEq(stream(PINNED_VERSION, { other: PINNED_VERSION }), stream(PINNED_VERSION, { other: OLD_VERSION }))
           && !sameEq(good, { ...good, stdout: good.stdout.slice(0, -1) }) && !sameEq(good, { ...good, status: 1 }) && !sameEq(good, { ...good, stderr: 'x' });
@@ -1031,13 +1034,13 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
       const once = makeHome('t25-once');
       const onceExtra = { ...nodeOptions(THROW), T2_THROW: 'once' };
       const rOnce = launch(plug, ['mcp'], { home: once, input: MCP_INPUT, extra: onceExtra });
-      // The same throw, but not an MCP start (stdin ends before any initialize): the real server refuses with its own exact 3.9.108 text.
+      // The same throw, but not an MCP start (stdin ends before any initialize): the real server refuses with its own exact 3.9.109 text.
       const rOnceEof = launch(plug, ['mcp'], { home: makeHome('t25-once-eof'), input: '', extra: onceExtra });
       const onceMessages = parseLines(rOnce.stdout).messages;
       result(rOnceEof.status === 1 && rOnceEof.stdout === '' && rOnceEof.stderr === REQUIRED_LINE && !rOnceEof.stderr.includes(STUB_NOTICE)
         && rOnce.status === 0 && onceMessages.length === 2 && onceMessages.every(isRpc) && onceMessages[0].result.serverInfo.version === PINNED_VERSION && onceMessages[1].result.tools.length === 0
         && rOnce.stderr.split('\n')[0] === SERVER_KEYLESS_NOTICE && !rOnce.stderr.includes(STUB_NOTICE),
-      'T2-5 resolver throws once (the launcher\'s call): keyless runs the real 3.9.108 server, never the stub: it answers keyless with its own notice (0 tools), and a start that is not an MCP host exits 1 with exactly the 3.9.108 "required" text');
+      'T2-5 resolver throws once (the launcher\'s call): keyless runs the real 3.9.109 server, never the stub: it answers keyless with its own notice (0 tools), and a start that is not an MCP host exits 1 with exactly the 3.9.109 "required" text');
       const always = makeHome('t25-always');
       const rAlways = launch(plug, ['mcp'], { home: always, input: MCP_INPUT, extra: { ...nodeOptions(THROW), T2_THROW: 'always' } });
       const pristineAlways = baselinePlug ? launch(baselinePlug, ['mcp'], { home: always, input: MCP_INPUT, extra: { ...nodeOptions(THROW), T2_THROW: 'always' } }) : null;
@@ -1525,7 +1528,7 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
     // The pin commits moved the pin files and nothing else. Against ccbe0c32 exactly the six Claude and Cursor pin files among those compared moved (both
     // package.json, both package-lock.json, both mcp-manifest.json) and the six Codex ones (the same three files in each Codex plugin), plus the two
     // launchers; no Codex launcher, hooks.json or LICENSE moved. Against be64842b (file anchor) the same fourteen. Against the baseline 5c657b1c,
-    // which pins 3.9.106, the same fourteen: the repins (3.9.108 for Claude and Cursor, 3.9.107 for the two Codex plugins) and the two launchers (the fleet-key refusal).
+    // which pins 3.9.106, the same fourteen: the repins (3.9.109 for Claude and Cursor, 3.9.107 for the two Codex plugins) and the two launchers (the fleet-key refusal).
     const LAUNCHERS = ['plugins/marrow/scripts/marrow-launch.cjs', 'plugins/marrow-cursor/scripts/marrow-launch.cjs'];
     const pinCompared = PIN_FILES.filter((f) => files.includes(f));
     const codexCompared = CODEX_PIN_FILES.filter((f) => files.includes(f));
@@ -1559,35 +1562,35 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
     // The files that differ from the baseline are exactly the expected ones.
     const walk = (dir, rel = '') => fs.readdirSync(path.join(dir, rel), { withFileTypes: true }).flatMap((e) => {
       const r = rel ? `${rel}/${e.name}` : e.name;
-      if (['.git', 'node_modules'].includes(e.name)) return [];
+      if (['.git', 'node_modules'].includes(e.name) || CI_FILES.has(r)) return [];
       return e.isDirectory() ? walk(dir, r) : [r];
     });
     const all = new Set([...walk(oldDir), ...walk(repo)]);
     const differing = [...all].filter((f) => !fs.existsSync(path.join(oldDir, f)) || !fs.existsSync(path.join(repo, f)) || !bytes(oldDir, f).equals(bytes(repo, f))).sort();
-    const expected = ['README.md', 'plugins/marrow-cursor/.cursor-plugin/plugin.json', 'plugins/marrow-cursor/scripts/marrow-launch.cjs', 'plugins/marrow-cursor/skills/marrow/SKILL.md',
+    const expected = ['.gitattributes', 'README.md', 'plugins/marrow-cursor/.cursor-plugin/plugin.json', 'plugins/marrow-cursor/scripts/marrow-launch.cjs', 'plugins/marrow-cursor/skills/marrow/SKILL.md',
       'plugins/marrow/.claude-plugin/plugin.json', 'plugins/marrow/scripts/marrow-launch.cjs', 'plugins/marrow/scripts/marrow-session-check.cjs', 'plugins/marrow/skills/marrow/SKILL.md',
-      'tools/check.cjs', 'tools/test-launcher-lock.cjs', 'tools/test-launcher-t2.cjs', 'tools/test-launcher.cjs', 'tools/test-session-check.cjs'];
+      'tools/check.cjs', 'tools/test-launcher-lock.cjs', 'tools/test-launcher-t2.cjs', 'tools/test-launcher-win32.cjs', 'tools/test-launcher.cjs', 'tools/test-session-check.cjs'];
     const differingFrom = (dir) => [...new Set([...walk(dir), ...walk(repo)])].filter((f) => !fs.existsSync(path.join(dir, f)) || !fs.existsSync(path.join(repo, f)) || !bytes(dir, f).equals(bytes(repo, f))).sort();
     const differingPrepin = differingFrom(prepinDir);
     const expectedPrepin = [...new Set([...PIN_FILES, ...CODEX_PIN_FILES, ...TEST_COMMIT_FILES, ...BRANCH_FILES, ...PUB_FILES, ...VENDOR_FILES])].sort();
     const expectedOld = [...new Set([...expected, ...PIN_FILES, ...CODEX_PIN_FILES, ...TEST_COMMIT_FILES, ...PUB_FILES, ...VENDOR_FILES])].sort();
     const list = (got, want) => (got.length === want.length ? `${got.length} files` : '') + (JSON.stringify(got) === JSON.stringify(want) ? '' : ` unexpected: ${got.filter((f) => !want.includes(f)).join(',')} missing: ${want.filter((f) => !got.includes(f)).join(',')}`);
-    // Every name added to the expected sets besides the pin files is pinned to its sha256: the 11 test-only files of the child-isolation commits (TEST_FILE_SHA256)
-    // the two files of the pub-fix ride (PUB_FILE_SHA256), the two vendored files of the 3.9.108 pack (VENDOR_FILE_SHA256) and the 12 Codex files of CODEX_PIN_FILES (CODEX_FILE_SHA256). The pin tables must name exactly those files; this file holds the pins, so its own name stays allowed as before.
+    // Every name added to the expected sets besides the pin files is pinned to its sha256: the 13 test-only files of the child-isolation commits (TEST_FILE_SHA256)
+    // the two files of the pub-fix ride (PUB_FILE_SHA256), the two vendored files of the 3.9.109 pack (VENDOR_FILE_SHA256) and the 12 Codex files of CODEX_PIN_FILES (CODEX_FILE_SHA256). The pin tables must name exactly those files; this file holds the pins, so its own name stays allowed as before.
     const PINNED_SHA256 = { ...TEST_FILE_SHA256, ...PUB_FILE_SHA256, ...VENDOR_FILE_SHA256, ...CODEX_FILE_SHA256 };
     const pinnedNames = Object.keys(PINNED_SHA256).sort();
     const pinsCoverAddedFiles = JSON.stringify(pinnedNames) === JSON.stringify([...TEST_COMMIT_FILES.filter((f) => f !== 'tools/test-launcher-t2.cjs'), ...PUB_FILES, ...VENDOR_FILES, ...CODEX_PIN_FILES].sort());
     const pinMismatch = pinnedNames.filter((f) => !fs.existsSync(path.join(repo, f)) || crypto.createHash('sha256').update(bytes(repo, f)).digest('hex') !== PINNED_SHA256[f]);
     result(JSON.stringify(differingPrepin) === JSON.stringify(expectedPrepin) && JSON.stringify(differing) === JSON.stringify(expectedOld) && pinsCoverAddedFiles && pinMismatch.length === 0,
-      'T2-13 exactly these files differ: against ccbe0c32 the 15 pin files named in PIN_FILES (both package.json, package-lock.json, mcp-manifest.json, plugin.json, SKILL.md and marketplace.json, both READMEs, tools/mcp-pins/SOURCE.md), the 12 Codex files named in CODEX_PIN_FILES, the six BRANCH_FILES and the test-only files named in TEST_COMMIT_FILES (the 11 added by the child-isolation commits only with the exact bytes pinned in TEST_FILE_SHA256) the two PUB_FILES (SECURITY.md and .github/CODEOWNERS, only with the exact bytes pinned in PUB_FILE_SHA256) and the two VENDOR_FILES (tools/mcp-pins/SHA256SUMS and tools/mcp-pins/dist/codex-plugin-pins.js, only with the exact bytes pinned in VENDOR_FILE_SHA256) and the 12 Codex files of CODEX_PIN_FILES (only with the exact bytes pinned in CODEX_FILE_SHA256), nothing else; against be64842b the same fri-train set as before plus the nine more pin files and the 12 Codex files', `since ccbe0c32: ${list(differingPrepin, expectedPrepin)}; since be64842b: ${list(differing, expectedOld)}; ${pinnedNames.length} added files pinned to their sha256: ${pinsCoverAddedFiles ? (pinMismatch.length ? `bytes differ: ${pinMismatch.join(',')}` : 'all equal') : 'the pin tables differ from TEST_COMMIT_FILES, PUB_FILES, VENDOR_FILES and CODEX_PIN_FILES'}`);
-    // Against the branch's own base exactly the BRANCH_FILES and the files of the repins differ (PIN_FILES for 3.9.108, CODEX_PIN_FILES for 3.9.107, and the pub and vendor files): no hooks.json,
+      'T2-13 exactly these files differ: against ccbe0c32 the 15 pin files named in PIN_FILES (both package.json, package-lock.json, mcp-manifest.json, plugin.json, SKILL.md and marketplace.json, both READMEs, tools/mcp-pins/SOURCE.md), the 12 Codex files named in CODEX_PIN_FILES, the eight BRANCH_FILES and the test-only files named in TEST_COMMIT_FILES (the 13 added by the child-isolation and network-guard commits only with the exact bytes pinned in TEST_FILE_SHA256) the two PUB_FILES (SECURITY.md and .github/CODEOWNERS, only with the exact bytes pinned in PUB_FILE_SHA256) and the two VENDOR_FILES (tools/mcp-pins/SHA256SUMS and tools/mcp-pins/dist/codex-plugin-pins.js, only with the exact bytes pinned in VENDOR_FILE_SHA256) and the 12 Codex files of CODEX_PIN_FILES (only with the exact bytes pinned in CODEX_FILE_SHA256), nothing else; against be64842b the same fri-train set as before plus the nine more pin files and the 12 Codex files', `since ccbe0c32: ${list(differingPrepin, expectedPrepin)}; since be64842b: ${list(differing, expectedOld)}; ${pinnedNames.length} added files pinned to their sha256: ${pinsCoverAddedFiles ? (pinMismatch.length ? `bytes differ: ${pinMismatch.join(',')}` : 'all equal') : 'the pin tables differ from TEST_COMMIT_FILES, PUB_FILES, VENDOR_FILES and CODEX_PIN_FILES'}`);
+    // Against the branch's own base exactly the BRANCH_FILES and the files of the repins differ (PIN_FILES for 3.9.109, CODEX_PIN_FILES for 3.9.107, and the pub and vendor files): no hooks.json,
     // Codex launcher, .mcp.json, LICENSE, other doc or skill moved.
     if (!noticeBaseDir) { result(false, 'T2-13 the branch base (5c657b1c) is available for the moved-files comparison', noticeBaseError); } else {
       const differingBase = differingFrom(noticeBaseDir);
       const differingBaseline = differingFrom(baselineDir);
       const expectedBase = [...new Set([...BRANCH_FILES, ...PIN_FILES, ...CODEX_PIN_FILES, ...TEST_COMMIT_FILES, ...PUB_FILES, ...VENDOR_FILES])].sort();
       result(JSON.stringify(differingBase) === JSON.stringify(expectedBase) && JSON.stringify(differingBaseline) === JSON.stringify(expectedBase),
-        'T2-13 against 5c657b1c (the base of this branch and the baseline) exactly the six BRANCH_FILES (both launchers, the session check, tools/check.cjs, this test file, tools/test-session-check.cjs), the 15 PIN_FILES, the 12 CODEX_PIN_FILES, the test-only files of TEST_COMMIT_FILES, the two PUB_FILES, the two VENDOR_FILES and the 12 CODEX_PIN_FILES differ (the added names only with their pinned bytes), nothing else',
+        'T2-13 against 5c657b1c (the base of this branch and the baseline) exactly the eight BRANCH_FILES (both launchers, the session check, tools/check.cjs, this test file, tools/test-session-check.cjs, .gitattributes, tools/test-launcher-win32.cjs), the 15 PIN_FILES, the 12 CODEX_PIN_FILES, the test-only files of TEST_COMMIT_FILES, the two PUB_FILES, the two VENDOR_FILES and the 12 CODEX_PIN_FILES differ (the added names only with their pinned bytes), nothing else',
         `since 5c657b1c: ${list(differingBase, expectedBase)}; since the baseline: ${list(differingBaseline, expectedBase)}`);
     }
     // No new Windows claim in either direction: existing Windows wording is untouched, except the one README line that was
@@ -1621,7 +1624,7 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
     result(depsNow['@getmarrow/mcp'] === PINNED_VERSION && depsWas['@getmarrow/mcp'] === OLD_VERSION && apartFromMcp(depsNow) === apartFromMcp(depsWas)
       && Object.keys(depsNow).length === Object.keys(depsWas).length && JSON.stringify(depsOf(repo, 'plugins/marrow-cursor')) === JSON.stringify(depsNow)
       && lockMcp(repo, 'plugins/marrow') === PINNED_VERSION && lockMcp(repo, 'plugins/marrow-cursor') === PINNED_VERSION,
-    'T2-13 plugin dependencies: only @getmarrow/mcp moved, from 3.9.105 to exactly 3.9.108 (both package.json and both lockfiles), the SDK and every other dependency are unchanged');
+    'T2-13 plugin dependencies: only @getmarrow/mcp moved, from 3.9.105 to exactly 3.9.109 (both package.json and both lockfiles), the SDK and every other dependency are unchanged');
     const check = spawnSync(process.execPath, [path.join(repo, 'tools', 'check.cjs')], { cwd: repo, encoding: 'utf8', env: env() });
     const fails = (check.stdout || '').split('\n').filter((l) => l.startsWith('FAIL')).map((l) => l.replace(/:.*/, ''));
     const failsOf = (dir) => (spawnSync(process.execPath, [path.join(dir, 'tools', 'check.cjs')], { cwd: dir, encoding: 'utf8', env: env() }).stdout || '').split('\n').filter((l) => l.startsWith('FAIL')).map((l) => l.replace(/:.*/, ''));
@@ -1672,7 +1675,7 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
       && pinnedDist('cli.js').includes('return `${fix}\\n${GET_A_KEY_LINE}\\n`;')
       && pinnedDist('env.js').includes(`'${NO_KEY_FIX}'`)
       && pinnedDist('keyless-server.js').includes(`exports.KEYLESS_NOTICE = '${SERVER_KEYLESS_NOTICE}';`);
-    result(server.status === 1 && server.stdout === '' && server.stderr === REQUIRED_LINE && textsInPack, 'T2-14 oracle: the pinned server with no key exits 1 with nothing on stdout and exactly the 3.9.108 refusal text, which is in the pinned dist (the exit the stub gives a non-MCP start)', `exit ${server.status}`);
+    result(server.status === 1 && server.stdout === '' && server.stderr === REQUIRED_LINE && textsInPack, 'T2-14 oracle: the pinned server with no key exits 1 with nothing on stdout and exactly the 3.9.109 refusal text, which is in the pinned dist (the exit the stub gives a non-MCP start)', `exit ${server.status}`);
     const launcherSource = fs.readFileSync(path.join(plug, 'scripts', 'marrow-launch.cjs'), 'utf8');
     const launcherCode = launcherSource.replace(/^\s*\/\/.*$/gm, '');
     result((launcherCode.match(/MARROW_API_KEY required/g) || []).length === 1 && !/npx|@latest|--package=/.test(launcherCode), 'T2-14 the launcher holds the refusal head once (two bodies share it: no key, fleet key only) and no npx or unpinned spec');
@@ -1784,6 +1787,10 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
       integrity();
       await main();
       await guardRows();
+      const canary = netGuard.canaryRow(work);
+      result(canary.ok, 'NET canary: a child under the shared guard is refused on a public-looking name, IP literals, a mapped address, a decimal form and a look-alike, one tagged line each, and loopback is left alone', canary.detail);
+      const attempts = (() => { try { return netGuard.assertNoAttempts([NPM.log]); } catch (error) { return String(error.message); } })();
+      result(attempts === 0, 'NET no program this tool started (launcher, server, hooks, npm) reached a non-loopback host: the network guard log holds 0 attempts', String(attempts));
     } finally {
       if (process.env.T2_REPORT_DIR) {
         fs.mkdirSync(process.env.T2_REPORT_DIR, { recursive: true });

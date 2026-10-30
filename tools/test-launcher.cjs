@@ -1,12 +1,15 @@
 'use strict';
 // Maintainer tests: the launcher against the real pinned @getmarrow/mcp entrypoints, with a temporary
-// HOME, no key and no Marrow API. Needs npm and the npm registry (one online install); the offline
-// cases point npm at a dead registry with an empty cache.
+// HOME, no key and no Marrow API. Every npm child runs in the private, offline npm environment of test/npm-env.cjs (a seeded COPY of the
+// cache named by npm_config_cache must hold the pinned tarballs) and every node child under the loopback network guard of
+// test/net-guard.cjs; the offline cases point npm at a dead registry with an empty cache.
 //   node tools/test-launcher.cjs [claude|cursor]
 // The cursor run uses plugins/marrow-cursor with Cursor's entrypoint names and deny format.
 // The install rule (PKG-L2): only `mcp`, the context hook and `prepare` install the private copy. Every tool
 // hook, PreToolUse above all, only looks for a verified copy and, with none, answers at once without npm.
 require('../test/isolate.cjs'); // private HOME and spawn guard for every child this tool starts (test/child-isolation.cjs)
+const netGuard = require('../test/net-guard.cjs'); // the one loopback network guard
+const npmEnvironment = require('../test/npm-env.cjs'); // private npm environment + loopback network guard for every child
 const { spawnSync, spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -22,7 +25,7 @@ const work = fs.mkdtempSync(path.join(os.tmpdir(), `marrow-launcher-${host}-`));
 const home = path.join(work, 'home');
 const project = path.join(home, 'project');
 fs.mkdirSync(project, { recursive: true });
-const warmCache = process.env.npm_config_cache || path.join(work, 'npm-cache');
+const NPM = npmEnvironment.create({ root: work, home });
 let pass = 0;
 let fail = 0;
 function result(ok, name, detail = '') {
@@ -57,9 +60,7 @@ function spied() {
 }
 
 function baseEnv(extra = {}) {
-  const env = {};
-  for (const key of ['PATH', 'LANG', 'TMPDIR', 'SystemRoot', 'npm_config_registry']) if (process.env[key]) env[key] = process.env[key];
-  return { ...env, HOME: home, USERPROFILE: home, npm_config_cache: warmCache, npm_config_update_notifier: 'false', ...extra };
+  return NPM.env({ HOME: home, USERPROFILE: home, ...extra });
 }
 const OFFLINE = () => ({ npm_config_registry: 'http://127.0.0.1:9/', npm_config_cache: fs.mkdtempSync(path.join(work, 'empty-cache-')), npm_config_fetch_retries: '0', npm_config_fetch_timeout: '2000' });
 
@@ -290,6 +291,10 @@ concurrent().then(async () => {
   serverStart();
   await t2.finish();
   await lockRows.finish(); // after T2: its timing rows (a takeover within 10 s) need a quiet machine
+  const canary = netGuard.canaryRow(work);
+  result(canary.ok, 'NET canary: a child under the shared guard is refused on a public-looking name, IP literals, a mapped address, a decimal form and a look-alike, one tagged line each, and loopback is left alone', canary.detail);
+  const attempts = (() => { try { return netGuard.assertNoAttempts([NPM.log]); } catch (error) { return String(error.message); } })();
+  result(attempts === 0, 'NET no program this tool started (launcher, MCP server, hooks, npm) reached a non-loopback host: the network guard log holds 0 attempts', String(attempts));
   fs.rmSync(work, { recursive: true, force: true });
   process.stdout.write(`RESULT pass=${pass} fail=${fail}\n`);
   process.exit(fail ? 1 : 0);

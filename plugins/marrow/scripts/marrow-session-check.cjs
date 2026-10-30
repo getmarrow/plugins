@@ -5,10 +5,12 @@
 // marrow is enabled. Both copies would run, doubling Marrow's checks and records.
 // It reads those files in-process, prints only fixed labels for which places matched, and never
 // changes anything.
-// When nothing is duplicated it also says, in one fixed line, that the keyless seatbelt is on, but
-// only while no Marrow key can be set (see noKeyIsSet) AND the pinned hook is in its keyless seatbelt
-// mode right now (see hookModeIsSeatbelt). In every other state it says nothing: the hook prints its own
-// text when it holds something, and this line never claims more protection than the hook gives.
+// When nothing is duplicated it also says, in one fixed line, that the keyless seatbelt is on, but only
+// while ALL of these hold: no Marrow key can be set (see noKeyIsSet); the pinned hook is in its keyless
+// seatbelt mode with the rollout switch on; MARROW_AUTO_HOOK is not the hook's exact off value `false`; and the
+// pinned control state (what the hook reads on every call) is the default or a valid enabled:true file (see
+// hookModeIsSeatbelt). In every other state it says nothing: the hook prints its own text when it holds
+// something, and this line never claims more protection than the hook gives. It is decided once, at session start.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -36,6 +38,11 @@ function hasMarrowHook(settings) {
 // The one line shown while no key is set. Fixed text: nothing from the environment or the files below
 // is ever put in it.
 const KEYLESS_NOTICE = 'Marrow seatbelt is on (no key yet): it stops actions like force-push to main, production deploys, package publishes and secret files. For approval prompts instead, add a key: getmarrow.ai/docs#start-here';
+
+// The PreToolUse entry of hooks/hooks.json that makes the hook run on every tool call, as shipped. The notice is silent when the
+// file does not hold exactly this entry (tools/test-session-check.cjs fails when this text and the file differ).
+const PRE_ACTION_MATCHER = '^(?!(?:mcp__plugin_marrow_marrow__(?:marrow_agent_runtime|marrow_agent_status|marrow_arbitrate|marrow_buyer_proof|marrow_commit|marrow_completion_contracts|marrow_coordinate|marrow_decision_brief|marrow_decision_trace|marrow_evaluate_completion_contract|marrow_fleet_lessons|marrow_governance_timeline|marrow_model_usage|marrow_replay_compare|marrow_think|marrow_value_report|marrow_workflow_gate)|LS|ListMcpResourcesTool)$)[\\s\\S]*';
+const PRE_ACTION_HOOK = JSON.stringify({ type: 'command', command: 'node "${CLAUDE_PLUGIN_ROOT}/scripts/marrow-launch.cjs" claude-pre-action-hook', timeout: 20 });
 
 // ---- owner files, lstat only (begin) ---------------------------------------------------------------
 // True only when the file is certainly not there. Any other answer (permission denied, not a directory,
@@ -170,13 +177,28 @@ function pinnedEntry() {
   return privateDir(dir) ? verifiedEntry(manifest, path.join(dir, 'node_modules')) : null;
 }
 
-// True only when the hook would answer in its keyless `seatbelt` mode right now. Same calls as the hook, from the same
-// verified copy: the key lookup of the hook identity (dist/hook-contract.js resolveNativeHookIdentity: resolveMarrowEnv with
-// trustedOnly) must find no key, then resolveSeatbeltModeOnHost() with its own defaults (this process's env and passwd home, as
-// dist/seatbelt/hook.js keylessSeatbelt calls it) must say `seatbelt`, and the compiled-in rollout switch must be on. Every other
-// answer, a throw, or no verified copy is false, and false means no keyless line: the hook's own text speaks for itself.
+// True only when this plugin's hooks.json still declares the pre-action hook entry as shipped (the file the host reads).
+function preActionHookIsDeclared() {
+  const hooks = readJson(path.join(ROOT, 'hooks', 'hooks.json'));
+  const entries = hooks && hooks.hooks && hooks.hooks.PreToolUse;
+  return Array.isArray(entries) && entries.some((entry) => entry && entry.matcher === PRE_ACTION_MATCHER
+    && Array.isArray(entry.hooks) && entry.hooks.some((hook) => JSON.stringify(hook) === PRE_ACTION_HOOK));
+}
+
+// The only keys the pinned readLocalControlState() answers with (control-state.js); any other shape is not understood.
+const CONTROL_KEYS = ['enabled', 'state', 'changed_at', 'change_id'];
+
+// True only when the hook would answer in its keyless `seatbelt` mode right now AND would really protect. Same calls as the hook, from the same
+// verified copy: MARROW_AUTO_HOOK is the exact string `false` (hook-pre-action.js: the hook then does nothing); the key lookup of the hook identity
+// (dist/hook-contract.js resolveNativeHookIdentity: resolveMarrowEnv with trustedOnly) must find no key, then resolveSeatbeltModeOnHost() with its
+// own defaults (this process's env and passwd home, as dist/seatbelt/hook.js keylessSeatbelt calls it) must say `seatbelt`, and the compiled-in
+// rollout switch must be on; last, the owner's control state, read with the hook's own call (readLocalControlState() with no argument, so the same
+// home as the hook: os.homedir(), which must be absolute), must be the default (no file) or a valid enabled:true file. Disabled, unsafe, unreadable
+// or an unknown answer, a throw, a missing module or no verified copy is false, and false means no keyless line: the hook's own text speaks for itself.
 function hookModeIsSeatbelt() {
   try {
+    if (process.env.MARROW_AUTO_HOOK === 'false') return false;
+    if (!preActionHookIsDeclared()) return false;
     const entry = pinnedEntry();
     if (!entry) return false;
     const dist = path.dirname(entry);
@@ -184,7 +206,13 @@ function hookModeIsSeatbelt() {
     if (resolved === null || typeof resolved !== 'object' || resolved.apiKey !== '') return false;
     const resolution = require(path.join(dist, 'seatbelt-mode.js')).resolveSeatbeltModeOnHost();
     if (resolution === null || typeof resolution !== 'object' || resolution.mode !== 'seatbelt') return false;
-    return require(path.join(dist, 'seatbelt', 'hook.js')).SEATBELT_ROLLOUT.keyless === 'on';
+    if (!(require(path.join(dist, 'seatbelt', 'hook.js')).SEATBELT_ROLLOUT.keyless === 'on')) return false;
+    if (!path.isAbsolute(os.homedir())) return false;
+    const control = require(path.join(dist, 'control-state.js')).readLocalControlState();
+    if (control === null || typeof control !== 'object') return false;
+    const keys = Object.keys(control);
+    if (!['enabled', 'state', 'changed_at'].every((key) => keys.includes(key)) || !keys.every((key) => CONTROL_KEYS.includes(key))) return false;
+    return control.enabled === true && (control.state === 'default_enabled' || control.state === 'enabled');
   } catch {
     return false;
   }

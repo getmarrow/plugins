@@ -237,7 +237,8 @@ function npmCommand() {
 
 function removeQuietly(target) {
   try {
-    fs.rmSync(target, { recursive: true, force: true });
+    // Windows: antivirus and the search indexer briefly hold files of a just-written tree open, so a removal is retried a few times.
+    fs.rmSync(target, POSIX ? { recursive: true, force: true } : { recursive: true, force: true, maxRetries: 4, retryDelay: 100 });
   } catch {
     // a leftover directory is removed by the next successful install
   }
@@ -245,6 +246,22 @@ function removeQuietly(target) {
 
 function sleep(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+// Windows only: the same hold makes a directory rename fail with EPERM, EBUSY or EACCES, which is retried a few times (about 2 s at most).
+// A rename onto a copy that is already there (another start won) also reports EPERM on Windows: that is not retried, the caller checks the copy.
+// POSIX and every other error behave as before.
+const TRANSIENT_RENAME = new Set(['EPERM', 'EBUSY', 'EACCES']);
+const RENAME_RETRIES = 6;
+function renameDir(from, to) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return fs.renameSync(from, to);
+    } catch (error) {
+      if (POSIX || attempt >= RENAME_RETRIES || !error || !TRANSIENT_RENAME.has(error.code) || fs.existsSync(to)) throw error;
+      sleep(100 * (attempt + 1));
+    }
+  }
 }
 
 // Returns '' once the verified copy is in place, otherwise the key of CAUSES that names what went wrong.
@@ -271,7 +288,7 @@ function installCopy(data, id, manifest) {
     if (!verifiedEntry(manifest, path.join(stage, 'node_modules'))) return 'mismatch';
     const final = path.join(data, id);
     try {
-      fs.renameSync(stage, final);
+      renameDir(stage, final);
     } catch {
       // Another start (one that took over our lock) put its copy there first: use it only if it passes the same check.
       return privateDir(final) && verifiedEntry(manifest, path.join(final, 'node_modules')) ? '' : 'copy';

@@ -462,7 +462,7 @@ test('static: every tool that can start a child loads the isolation before child
   const ISOLATE = "require('../test/isolate.cjs')";
   const tools = fs.readdirSync(path.join(REPO_ROOT, 'tools')).filter((name) => name.endsWith('.cjs'));
   const spawners = tools.filter((name) => CHILD.test(READ(path.join(REPO_ROOT, 'tools', name)))).sort();
-  assert.deepEqual(spawners, ['bench-hooks.cjs', 'pins-check-ci.cjs', 'test-launcher-lock.cjs', 'test-launcher-t2.cjs', 'test-launcher.cjs', 'test-session-check.cjs']);
+  assert.deepEqual(spawners, ['bench-hooks.cjs', 'pins-check-ci.cjs', 'test-launcher-lock.cjs', 'test-launcher-t2.cjs', 'test-launcher-win32.cjs', 'test-launcher.cjs', 'test-session-check.cjs']);
   for (const name of spawners) {
     const text = READ(path.join(REPO_ROOT, 'tools', name));
     const first = text.indexOf(ISOLATE);
@@ -479,6 +479,98 @@ test('static: every tool that can start a child loads the isolation before child
   const sums = READ(path.join(REPO_ROOT, 'tools', 'mcp-pins', 'SHA256SUMS')).split('\n').filter(Boolean).map((line) => line.split(/\s+/));
   assert.equal(sums.length, 2);
   for (const [digest, file] of sums) assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(REPO_ROOT, 'tools', 'mcp-pins', file))).digest('hex'), digest, `${file} equals SHA256SUMS`);
+});
+
+// ---- network lint (plugins-test-network): the five test tools must use the shared, private npm environment and the loopback guard ----
+// networkLint() judges the text of a tool: no npm_config_* copied from the runner, the npm-env helper loaded, and every spawn of node or npm
+// (spawn, spawnSync, execFile, execFileSync, fork) carries an env option, so no child can inherit the runner's registry, token or proxy.
+const NETWORK_TOOLS = ['test-launcher.cjs', 'test-launcher-lock.cjs', 'test-launcher-t2.cjs', 'test-launcher-win32.cjs', 'test-session-check.cjs'];
+function callsOf(text) {
+  // returns [{ name, args }] for each spawn-like call, where args is the balanced text between the call parentheses
+  const out = [];
+  const code = text.replace(/^\s*\/\/.*$/gm, '');
+  const open = /(?<![\w.$])(?:cp\.|child_process\.)?(spawnSync|spawn|execFileSync|execFile|fork)\s*\(/g;
+  let match;
+  while ((match = open.exec(code)) !== null) {
+    let depth = 1;
+    let index = open.lastIndex;
+    const modes = [];
+    while (index < code.length && depth > 0) {
+      const ch = code[index];
+      const mode = modes[modes.length - 1];
+      if (mode === 'template') {
+        if (ch === '\\') index += 1;
+        else if (ch === '`') modes.pop();
+        else if (ch === '$' && code[index + 1] === '{') { modes.push('expr'); index += 1; }
+      } else if (mode === "'" || mode === '"') {
+        if (ch === '\\') index += 1;
+        else if (ch === mode) modes.pop();
+      } else if (ch === "'" || ch === '"') modes.push(ch);
+      else if (ch === '`') modes.push('template');
+      else if (ch === '{' && mode === 'expr') modes.push('expr');
+      else if (ch === '}' && mode === 'expr') modes.pop();
+      else if (modes.length === 0 || mode === 'expr') {
+        if (ch === '(') depth += 1;
+        else if (ch === ')') depth -= 1;
+      }
+      index += 1;
+    }
+    out.push({ name: match[1], args: code.slice(open.lastIndex, index - 1) });
+  }
+  return out;
+}
+function networkLint(name, text) {
+  const problems = [];
+  const code = text.replace(/^\s*\/\/.*$/gm, '');
+  if (!/require\((['"])\.\.\/test\/npm-env\.cjs\1\)/.test(code) && name !== 'test-session-check.cjs') problems.push('does not load test/npm-env.cjs');
+  if (name === 'test-session-check.cjs' && !/require\((['"])\.\.\/test\/net-guard\.cjs\1\)/.test(code)) problems.push('does not load test/net-guard.cjs');
+  if (/\.\.\.\s*process\.env\b(?!\.)/.test(code) || /Object\.assign\(\s*\{[^}]*\}\s*,\s*process\.env\b(?!\.)/.test(code) || /\benv\s*:\s*process\.env\b(?!\.)/.test(code)) problems.push('copies the whole runner environment');
+  for (const line of code.split('\n')) if (/process\.env\[/.test(line) && /npm_config_|NPM_/i.test(line)) problems.push(`copies an npm name from the runner: ${line.trim().slice(0, 90)}`);
+  if (/for \(const \w+ of \[[^\]]*'npm_config_[a-z_]+'[^\]]*\]\)\s*if \(process\.env/.test(code)) problems.push('copies an npm_config_ name from the runner');
+  const NODE_OR_NPM = /^\s*(?:process\.execPath|noNpmNode|opts\.node|node\b|'node'|"node"|[\w.]*node\w*\s*\|\||process\.platform\s*===\s*'win32'\s*\?\s*'npm\.cmd'|'npm'|"npm"|'npm\.cmd')/;
+  let spawns = 0;
+  for (const call of callsOf(code)) {
+    if (!NODE_OR_NPM.test(call.args)) continue;
+    spawns += 1;
+    if (!/\benv\b/.test(call.args)) problems.push(`${call.name}(${call.args.trim().slice(0, 60).replace(/\s+/g, ' ')}...) has no env option`);
+  }
+  return { problems, spawns };
+}
+
+test('lint: the five test tools run every node and npm child on the private npm environment and the shared guard; master\'s versions fail the same lint', () => {
+  const BASE = '1a7f043f352ab3cceac2bf2c3fa5832922b2d7c5';
+  const head = {};
+  for (const name of NETWORK_TOOLS) {
+    head[name] = networkLint(name, fs.readFileSync(path.join(REPO_ROOT, 'tools', name), 'utf8'));
+    assert.deepEqual(head[name].problems, [], `tools/${name}: ${head[name].problems.join('; ')}`);
+    assert.ok(head[name].spawns >= 1, `tools/${name}: the scan found its node/npm spawns (${head[name].spawns})`);
+  }
+  // the lint itself: synthetic bad and good shapes (nested parens, template strings, shell words in strings)
+  const bad = [
+    "const { spawnSync } = require('child_process');\nspawnSync(process.execPath, ['-e', '0'], { stdio: 'ignore' });",
+    "const { spawn } = require('child_process');\nspawn(process.execPath, [path.join(a, 'b(')], { cwd: x });",
+    "cp.spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['ci'], { cwd: dir });",
+    "execFileSync('node', [`${f(1)}`]);",
+    "const env = { ...process.env };",
+    "for (const name of ['PATH', 'npm_config_registry']) if (process.env[name]) out[name] = process.env[name];",
+    "const e = { env: process.env };",
+  ];
+  const good = [
+    "const NPM = require('../test/npm-env.cjs');\nspawnSync(process.execPath, ['-e', '0'], { stdio: 'ignore', env: NPM.env() });\nspawn('chmod', ['-R', 'u+rwX', dir], { stdio: 'ignore' });\n// spawn(process.execPath) in a comment",
+    "const NPM = require('../test/npm-env.cjs');\nspawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['ci', `--prefix=${a(b)}`], { cwd: dir, env: NPM.env({ HOME: h }) });",
+  ];
+  const lintOf = (text) => networkLint('test-launcher.cjs', text).problems;
+  for (const text of bad) assert.ok(lintOf(text).length > 0, `lint flags: ${text.slice(0, 70)}`);
+  for (const text of good) assert.deepEqual(lintOf(text), [], `lint passes: ${text.slice(0, 70)}`);
+  // RED-first: the same lint on the tools as they stand at the base commit
+  const red = {};
+  for (const name of ['test-launcher.cjs', 'test-launcher-lock.cjs', 'test-launcher-t2.cjs']) {
+    const shown = git(REPO_ROOT, 'show', `${BASE}:tools/${name}`);
+    assert.equal(shown.status, 0, `git show ${BASE.slice(0, 7)}:tools/${name}`);
+    red[name] = networkLint(name, shown.stdout).problems;
+    assert.ok(red[name].length > 0, `the base version of tools/${name} fails the lint`);
+  }
+  assert.ok(Object.values(red).every((list) => list.some((line) => /npm-env|npm name|npm_config_|no env option/.test(line))));
 });
 
 // ---- patch round 1 (aud-test-iso-2c findings F1 to F5) -------------------------------------------------------------------

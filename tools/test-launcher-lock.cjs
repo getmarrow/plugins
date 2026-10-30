@@ -3,9 +3,11 @@
 // start never is, and the verified-copy hash check stays the only trust gate.
 // Called by tools/test-launcher.cjs, which counts the rows; it can also run alone:
 //   node tools/test-launcher-lock.cjs [claude|cursor]
-// Same rules as test-launcher-t2.cjs: children get an allowlisted env, npm uses npm_config_cache from the parent (seeded cache),
-// nothing here reads or writes a real key.
+// Same rules as test-launcher-t2.cjs: children get the private npm environment of test/npm-env.cjs (offline, a seeded COPY of the cache
+// named by npm_config_cache) and run under the loopback network guard of test/net-guard.cjs; nothing here reads or writes a real key.
 require('../test/isolate.cjs'); // private HOME and spawn guard for every child this tool starts (test/child-isolation.cjs)
+const netGuard = require('../test/net-guard.cjs'); // the one loopback network guard
+const npmEnvironment = require('../test/npm-env.cjs'); // private npm environment + loopback network guard for every child
 const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -21,15 +23,11 @@ function start({ host, repo, result }) {
   const rootVar = CURSOR ? 'CURSOR_PLUGIN_ROOT' : 'CLAUDE_PLUGIN_ROOT';
   const PRE = CURSOR ? 'cursor-pre-action-hook' : 'claude-pre-action-hook';
   const work = fs.mkdtempSync(path.join(os.tmpdir(), `marrow-lock-${host}-`));
-  const cache = process.env.npm_config_cache || path.join(work, 'npm-cache');
+  const NPM = npmEnvironment.create({ root: work });
   const sleepers = [];
   let counter = 0;
 
-  function env(extra = {}) {
-    const out = {};
-    for (const name of ['PATH', 'LANG', 'TMPDIR', 'SystemRoot', 'npm_config_registry']) if (process.env[name]) out[name] = process.env[name];
-    return { ...out, npm_config_cache: cache, npm_config_update_notifier: 'false', ...extra };
-  }
+  const env = (extra = {}) => NPM.env(extra);
   // A fresh plugin copy (no node_modules, so every run needs the private copy) with its own HOME and data folder.
   function setup() {
     counter += 1;
@@ -83,12 +81,12 @@ function start({ host, repo, result }) {
   const exists = (p) => { try { fs.lstatSync(p); return true; } catch { return false; } };
   const entries = (c) => (exists(c.data) ? fs.readdirSync(c.data).sort() : []);
   function sleeper() {
-    const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 600000)'], { stdio: 'ignore' });
+    const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 600000)'], { stdio: 'ignore', env: env() });
     sleepers.push(child);
     return child;
   }
   async function deadPid() {
-    const child = spawn(process.execPath, ['-e', '0'], { stdio: 'ignore' });
+    const child = spawn(process.execPath, ['-e', '0'], { stdio: 'ignore', env: env() });
     await new Promise((resolve) => child.on('close', resolve));
     return child.pid;
   }
@@ -292,6 +290,10 @@ function start({ host, repo, result }) {
         return;
       }
       await main();
+      const canary = netGuard.canaryRow(work);
+      result(canary.ok, 'NET canary: a child under the shared guard is refused on a public-looking name, IP literals, a mapped address, a decimal form and a look-alike, one tagged line each, and loopback is left alone', canary.detail);
+      const attempts = (() => { try { return netGuard.assertNoAttempts([NPM.log]); } catch (error) { return String(error.message); } })();
+      result(attempts === 0, 'NET no program this tool started reached a non-loopback host: the network guard log holds 0 attempts', String(attempts));
     } finally {
       for (const child of sleepers) child.kill('SIGKILL');
       spawnSync('chmod', ['-R', 'u+rwX', work], { stdio: 'ignore' });

@@ -10,7 +10,7 @@ The `getmarrow` marketplace for Claude Code, Cursor and Codex. Each host's `marr
 
 Each plugin governs its own host only. The Claude Code plugin does not govern Cursor, even where Cursor imports Claude Code plugins: Cursor users install the Cursor plugin (see "Install in Cursor" below).
 
-The Claude Code and Cursor plugins run `@getmarrow/mcp` 3.9.108, which includes the free keyless seatbelt: with no account and no key, their hooks stop seven kinds of action (see "Without a key: the keyless seatbelt" below). With an account, Marrow holds risky actions for approval and keeps the audit trail. The Codex plugins pin `@getmarrow/mcp` 3.9.102 and do not include the keyless seatbelt; it comes to them with the next update.
+The Claude Code and Cursor plugins run `@getmarrow/mcp` 3.9.109, which includes the free keyless seatbelt: with no account and no key, their hooks stop seven kinds of action (see "Without a key: the keyless seatbelt" below). With an account, Marrow holds risky actions for approval and keeps the audit trail. The Codex plugins pin `@getmarrow/mcp` 3.9.102 and do not include the keyless seatbelt; it comes to them with the next update.
 
 **Windows:** Native Windows is not supported yet. Use WSL.
 
@@ -48,10 +48,10 @@ With no Marrow key, the Marrow MCP server shows as connected with 0 tools, and t
 Only the MCP server, without hooks, is a one-click link (a page renders it as a link or an "Add to Cursor" button):
 
 ```text
-cursor://anysphere.cursor-deeplink/mcp/install?name=marrow&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIi0tcGFja2FnZT1AZ2V0bWFycm93L21jcEAzLjkuMTA4IiwibWFycm93LW1jcCJdfQ==
+cursor://anysphere.cursor-deeplink/mcp/install?name=marrow&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIi0tcGFja2FnZT1AZ2V0bWFycm93L21jcEAzLjkuMTA5IiwibWFycm93LW1jcCJdfQ==
 ```
 
-The `config` value is base64 of `{"command":"npx","args":["-y","--package=@getmarrow/mcp@3.9.108","marrow-mcp"]}`, pinned, with no key and no `env`. The MCP server alone is advisory: approvals are enforced only by the plugin's hooks. Unlike the plugin, the link starts the server through `npx`, which can pick up a copy of `@getmarrow/mcp` that a project's `node_modules` claims at the same version. Prefer the plugin.
+The `config` value is base64 of `{"command":"npx","args":["-y","--package=@getmarrow/mcp@3.9.109","marrow-mcp"]}`, pinned, with no key and no `env`. The MCP server alone is advisory: approvals are enforced only by the plugin's hooks. Unlike the plugin, the link starts the server through `npx`, which can pick up a copy of `@getmarrow/mcp` that a project's `node_modules` claims at the same version. Prefer the plugin.
 
 ## What each plugin adds
 
@@ -61,7 +61,7 @@ The `config` value is base64 of `{"command":"npx","args":["-y","--package=@getma
 | MCP server | `.mcp.json`: server `marrow`. Its tools are on demand. | `mcp.json`: server `marrow`. Its tools are on demand. |
 | Skill | `skills/marrow`: when to call Marrow, holds and approvals, the key step, update commands. | `skills/marrow`: the same rules for Cursor. |
 
-Both run the pinned `@getmarrow/mcp` 3.9.108 entrypoints, the same ones the installer writes, through the same launcher. The plugins add no policy of their own.
+Both run the pinned `@getmarrow/mcp` 3.9.109 entrypoints, the same ones the installer writes, through the same launcher. The plugins add no policy of their own.
 
 Hooks are cooperative, client-reported control. They act only while the plugin is enabled and the host runs them. A configured hook never proves coverage or enforcement on its own.
 
@@ -77,6 +77,7 @@ When a pre-action hook has no usable Marrow key and the machine shows no sign of
 - **Everything else gets no Marrow decision, so the host's own approval step decides:** Claude Code gets an empty answer. Cursor asks with its own approval prompt before a shell command that a hook without a key used to hold (for example `git commit` or `git push`); Cursor's other tools (MCP calls included) keep holding what a hook without a key held before. A tool the seatbelt does not recognise, or MCP arguments it cannot read, never gets the seatbelt's pass: the hook gives the answer a hook without a key gave before, a hold where that held.
 - **Local receipts:** each seatbelt decision is written to `~/.marrow/seatbelt/receipts/` on this machine, as codes and keyed hashes, plus the built-in tool name and shell program names from fixed lists (any MCP tool is recorded only as `mcp`); no command text, argument, path or URL. They are kept for up to 90 days or 50 MB. Nothing is uploaded.
 - **Folder permissions:** the seatbelt runs only where your home folder and the agent settings folders (such as `~/.claude`) can be written by you alone. On Linux, a folder that your own private group can also write (the default with umask 002) still counts. Any other folder keeps every hold, and the hold says that Marrow's keyless mode is off here.
+- **The session-start line (Claude Code plugin):** when no duplicate Marrow setup is found and no Marrow key can be set, the plugin's session check prints one fixed line at session start, "Marrow seatbelt is on (no key yet)", with what the seatbelt stops. It prints it only while the pinned hook would really protect: the keyless seatbelt is on, `MARROW_AUTO_HOOK` is not `false`, Marrow's local control state is the default or enabled, and this plugin's `hooks/hooks.json` still declares the pre-action hook as shipped. In any other state it says nothing, and the hook's own text speaks for itself. It is decided once, at session start, so it does not follow a later change.
 - **It is a seatbelt, not a vault:** it runs on the machine as your user and makes no network call. A determined agent can get around a local check, for example with a script it writes now and runs later, an interpreter, or a tool path with no hook.
 - **With an account:** Marrow holds risky actions for approval and keeps the audit trail. A machine linked to an account but with no working key keeps every hold it had, and the seatbelt stops apply too. With a working key the answers and requests are unchanged; the seatbelt only watches and records would-stops locally.
 
@@ -96,10 +97,11 @@ The plugins carry the hooks, so the hold message's "run the installer activate c
 
 ## Pinned versions and updates
 
-- `package.json` and `package-lock.json` (the same files in both the Claude Code and the Cursor plugin) pin `@getmarrow/mcp` 3.9.108 and `@getmarrow/sdk` 3.7.67 with sha512 integrity, equal to `@getmarrow/install` 0.1.76's `src/pins.js`. The Codex plugins pin `@getmarrow/mcp` 3.9.107 and `@getmarrow/sdk` 3.7.67, equal to `@getmarrow/install` 0.1.75's `src/pins.js`.
+- `package.json` and `package-lock.json` (the same files in both the Claude Code and the Cursor plugin) pin `@getmarrow/mcp` 3.9.109 and `@getmarrow/sdk` 3.7.67 with sha512 integrity, equal to `@getmarrow/install` 0.1.77's `src/pins.js`. The Codex plugins pin `@getmarrow/mcp` 3.9.107 and `@getmarrow/sdk` 3.7.67, equal to `@getmarrow/install` 0.1.75's `src/pins.js`.
 - Hooks start the package with `node`, not `npx`. Each start checks every file against `scripts/mcp-manifest.json`. Claude Code installs the lockfile into the plugin's cached copy with install scripts disabled. If that copy is missing or changed, or on Cursor, which installs no plugin dependencies, the launcher installs the same lockfile once (`npm ci --ignore-scripts`, outside your project) and checks that copy the same way. Only the plugin's Marrow server (`mcp`), the context hook (your first prompt) and `prepare` install; no tool hook does. Claude Code keeps it in the plugin's data folder (`~/.claude/plugins/data/`, removed on uninstall), Cursor in `~/.marrow/cursor-plugin` (mode 700), Codex in `~/.codex/plugins/data/marrow-getmarrow/`. Nothing is fetched by version at run time and nothing runs from your project's `node_modules`.
 - If no verified copy can be loaded (for example, offline on first use), the pre-action hook holds tool calls with a "Marrow plugin:" message until one can, and the other hooks report a non-blocking error. The pre-action hook never installs and never waits for another start's install: with no verified copy it answers at once (under a second), so the host's hook timeout (20 s on the Claude Code `PreToolUse` entry, above the 14 s the pinned hook allows itself) is never the thing that decides. On a fresh install the first tool call can be held for the second or so that the Marrow server's first start (or the first prompt) needs to install the copy; measured here, a cold start took about 1.3 s to a verified copy.
 - Each plugin sets `version`, so the host keeps you on the installed copy until a new version is published and you update. Third-party Claude Code marketplaces do not auto-update unless you turn that on.
+- **Claude Code 0.2.7 and Cursor 0.1.7** pin `@getmarrow/mcp` 3.9.109 and ship two small changes. The launchers (both plugins) retry a directory rename or removal that is briefly refused (`EPERM`, `EBUSY` or `EACCES`), a few times and for about 2 seconds at most; every other error, and any copy that does not match `scripts/mcp-manifest.json`, still stops the start (nothing unpinned ever runs), and on macOS and Linux nothing changed. The Claude Code session check prints its keyless line only while the pinned hook would really protect (see "Without a key: the keyless seatbelt").
 - To update the Claude Code plugin after Marrow reports a client update:
 
 ```bash

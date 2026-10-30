@@ -384,8 +384,16 @@ check('session check: the keyless line needs the hook\'s mode, the lstat check f
   assert.ok(/if \(!entry\) return false;/.test(mode), 'no verified copy is false');
   // Every load of the pinned copy goes through its dist folder; the rest of the script requires only core modules.
   const requires = [...block.matchAll(/\brequire\(([^)]*\)?)\)/g)].map((m) => m[1]);
-  assert.strictEqual(requires.length, 3);
+  assert.strictEqual(requires.length, 4);
   for (const arg of requires) assert.ok(/^path\.join\(dist, '/.test(arg), 'require of ' + arg);
+  // The 4th load is the owner's control state, asked of the same verified copy with the hook's own call (no argument: the hook's home).
+  assert.ok(requires.includes("path.join(dist, 'control-state.js')"), 'the control-state load');
+  assert.ok(/require\(path\.join\(dist, 'control-state\.js'\)\)\.readLocalControlState\(\)/.test(mode), 'the control state is read with no argument');
+  assert.ok(!/readLocalControlState\([^)]/.test(block), 'readLocalControlState takes an argument');
+  assert.ok(/process\.env\.MARROW_AUTO_HOOK === 'false'\) return false/.test(mode), 'the hook\'s exact off value');
+  // Nothing hides a load from the counter above.
+  const code = sessionCheck.replace(/^\s*\/\/.*$/gm, '');
+  for (const hide of [/\bmodule\.require\b/, /\bcreateRequire\b/, /\bimport\s*\(/, /\b_load\b/, /\beval\s*\(/, /\bnew Function\b/]) assert.ok(!hide.test(code), 'the session check uses ' + hide);
   const outside = [...sessionCheck.replace(/^\s*\/\/.*$/gm, '').replace(block, '').matchAll(/\brequire\(([^)]*)\)/g)].map((m) => m[1]);
   assert.deepStrictEqual(outside.sort(), ["'crypto'", "'fs'", "'os'", "'path'"]);
   // The write is the fixed notice, after both checks, in the keyless branch only.

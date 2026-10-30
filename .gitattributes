@@ -1,0 +1,6 @@
+# Plugin files are run and hashed byte for byte (the launcher, hooks, manifests, lockfiles, and the Codex plugin pins). Git for Windows
+# defaults to autocrlf=true, which would rewrite them to CRLF on checkout. Keep LF everywhere; binaries stay untouched.
+* text=auto eol=lf
+*.tgz binary
+*.png binary
+*.ico binary
