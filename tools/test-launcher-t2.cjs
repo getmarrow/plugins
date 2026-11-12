@@ -132,6 +132,8 @@ const BRANCH_FILES = [
   'tools/test-launcher-win32.cjs',
   'tools/test-session-check.cjs',
 ];
+// The four files the plugins 0.2.8 commit added (the icon, the plugin README, the update skill and its check), each named; T2-13 stays a closed set.
+const UPDATE_FILES = ['plugins/marrow/.claude-plugin/icon.png', 'plugins/marrow/README.md', 'plugins/marrow/skills/update/SKILL.md', 'tools/test-update-path.cjs'];
 // The files the 3.9.107 repin moved in the two Codex plugins (the Codex plugins pin MCP 3.9.107 and SDK 3.7.67 with the other two hosts), each named:
 // package.json, package-lock.json, mcp-manifest.json, plugin.json (version, pins), SKILL.md and references/hosts.md of both. No Codex launcher,
 // hooks.json, .mcp.json, LICENSE or doc moved; T2-13 holds that with the exact sets below.
@@ -1572,8 +1574,8 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
       'tools/check.cjs', 'tools/test-launcher-lock.cjs', 'tools/test-launcher-t2.cjs', 'tools/test-launcher-win32.cjs', 'tools/test-launcher.cjs', 'tools/test-session-check.cjs'];
     const differingFrom = (dir) => [...new Set([...walk(dir), ...walk(repo)])].filter((f) => !fs.existsSync(path.join(dir, f)) || !fs.existsSync(path.join(repo, f)) || !bytes(dir, f).equals(bytes(repo, f))).sort();
     const differingPrepin = differingFrom(prepinDir);
-    const expectedPrepin = [...new Set([...PIN_FILES, ...CODEX_PIN_FILES, ...TEST_COMMIT_FILES, ...BRANCH_FILES, ...PUB_FILES, ...VENDOR_FILES])].sort();
-    const expectedOld = [...new Set([...expected, ...PIN_FILES, ...CODEX_PIN_FILES, ...TEST_COMMIT_FILES, ...PUB_FILES, ...VENDOR_FILES])].sort();
+    const expectedPrepin = [...new Set([...PIN_FILES, ...CODEX_PIN_FILES, ...TEST_COMMIT_FILES, ...BRANCH_FILES, ...PUB_FILES, ...VENDOR_FILES, ...UPDATE_FILES])].sort();
+    const expectedOld = [...new Set([...expected, ...PIN_FILES, ...CODEX_PIN_FILES, ...TEST_COMMIT_FILES, ...PUB_FILES, ...VENDOR_FILES, ...UPDATE_FILES])].sort();
     const list = (got, want) => (got.length === want.length ? `${got.length} files` : '') + (JSON.stringify(got) === JSON.stringify(want) ? '' : ` unexpected: ${got.filter((f) => !want.includes(f)).join(',')} missing: ${want.filter((f) => !got.includes(f)).join(',')}`);
     // Every name added to the expected sets besides the pin files is pinned to its sha256: the 13 test-only files of the child-isolation commits (TEST_FILE_SHA256)
     // the two files of the pub-fix ride (PUB_FILE_SHA256), the two vendored files of the 3.9.109 pack (VENDOR_FILE_SHA256) and the 12 Codex files of CODEX_PIN_FILES (CODEX_FILE_SHA256). The pin tables must name exactly those files; this file holds the pins, so its own name stays allowed as before.
@@ -1588,7 +1590,7 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
     if (!noticeBaseDir) { result(false, 'T2-13 the branch base (5c657b1c) is available for the moved-files comparison', noticeBaseError); } else {
       const differingBase = differingFrom(noticeBaseDir);
       const differingBaseline = differingFrom(baselineDir);
-      const expectedBase = [...new Set([...BRANCH_FILES, ...PIN_FILES, ...CODEX_PIN_FILES, ...TEST_COMMIT_FILES, ...PUB_FILES, ...VENDOR_FILES])].sort();
+      const expectedBase = [...new Set([...BRANCH_FILES, ...PIN_FILES, ...CODEX_PIN_FILES, ...TEST_COMMIT_FILES, ...PUB_FILES, ...VENDOR_FILES, ...UPDATE_FILES])].sort();
       result(JSON.stringify(differingBase) === JSON.stringify(expectedBase) && JSON.stringify(differingBaseline) === JSON.stringify(expectedBase),
         'T2-13 against 5c657b1c (the base of this branch and the baseline) exactly the eight BRANCH_FILES (both launchers, the session check, tools/check.cjs, this test file, tools/test-session-check.cjs, .gitattributes, tools/test-launcher-win32.cjs), the 15 PIN_FILES, the 12 CODEX_PIN_FILES, the test-only files of TEST_COMMIT_FILES, the two PUB_FILES, the two VENDOR_FILES and the 12 CODEX_PIN_FILES differ (the added names only with their pinned bytes), nothing else',
         `since 5c657b1c: ${list(differingBase, expectedBase)}; since the baseline: ${list(differingBaseline, expectedBase)}`);

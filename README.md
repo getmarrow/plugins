@@ -93,7 +93,7 @@ chmod 600 ~/.marrow/env
 
 Or set `MARROW_API_KEY` in the environment that starts the host. Then run `/reload-plugins` in Claude Code, or restart Cursor. Never paste a key into chat.
 
-The plugins carry the hooks, so the hold message's "run the installer activate command" step is not needed for Claude Code or Cursor in a project that uses the plugin. That command (`MARROW_API_KEY=<your_key> npx -y @getmarrow/install@latest activate`), like the installer's `--repair`, writes a second copy of the hooks there. To check the key and connection, run `npx -y @getmarrow/install@latest doctor`. It only reads. Installer 0.1.71 and later count the Claude Code plugin's hooks; 0.1.70 and earlier report Claude Code hooks as missing, because the plugin holds them. The Cursor plugin is not counted, so doctor can report Cursor hooks as missing while the plugin holds them.
+The plugins carry the hooks, so the hold message's "run the installer activate command" step is not needed for Claude Code or Cursor in a project that uses the plugin. To update, run `/marrow:update` (it runs `npx @getmarrow/install@latest update`, which updates the plugin in place and keeps exactly one copy); never run the MCP setup or activate next to the plugin, that adds a second hook copy. To check the key and connection, run `npx -y @getmarrow/install@latest doctor`. It only reads. Installer 0.1.71 and later count the Claude Code plugin's hooks; 0.1.70 and earlier report Claude Code hooks as missing, because the plugin holds them. The Cursor plugin is not counted, so doctor can report Cursor hooks as missing while the plugin holds them.
 
 ## Pinned versions and updates
 
