@@ -34,7 +34,7 @@ const BASELINE_REF = process.env.T2_BASELINE_REF || '5c657b1c959846161a21b2c2dff
 const PREPIN_REF = 'ccbe0c329365e8903e8c2b9227e2c17050e512f9';
 // The fri-train tip that pinned MCP 3.9.105 (never published). T2-13 keeps it as a file anchor only: unpacked, compared, never installed.
 const OLD_REF = 'be64842b6120af91edc44854569124b38730614f';
-const PINNED_VERSION = '3.9.109'; // @getmarrow/mcp as pinned by this tree
+const PINNED_VERSION = '3.9.112'; // @getmarrow/mcp as pinned by this tree
 const BASELINE_VERSION = '3.9.106'; // @getmarrow/mcp as pinned by the baseline 5c657b1c (published)
 const OLD_VERSION = '3.9.105'; // @getmarrow/mcp as pinned by PREPIN_REF and OLD_REF (never published)
 const DEAD_URL = 'https://127.0.0.1:9';
@@ -816,7 +816,7 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
       const distLine = (dir, line) => (fs.readFileSync(path.join(dir, 'node_modules', '@getmarrow', 'mcp', 'dist', 'cli.js'), 'utf8').split('\n')[line - 1] || '');
       const CRASH_STATEMENT = '(0, index_1.validateBaseUrl)(rawBaseUrl)';
       const BASELINE_CRASH_LINE = 603;
-      const PINNED_CRASH_LINE = 628;
+      const PINNED_CRASH_LINE = 629;
       const crashFramesOk = Boolean(baselinePlug) && distLine(baselinePlug, BASELINE_CRASH_LINE).includes(CRASH_STATEMENT) && distLine(plug, PINNED_CRASH_LINE).includes(CRASH_STATEMENT);
       // A crash prints a stack trace that names the plugin folder and the launcher's own frames (line numbers); only those and the pinned frame differ.
       const crashText = (t, line) => t.replace(/plugin-\d+/g, 'plugin-#').replace(/marrow-launch\.cjs:\d+:\d+/g, 'marrow-launch.cjs:#:#')
