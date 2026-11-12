@@ -115,6 +115,14 @@ check('UP-14 the skill names no key file, environment variable or key-shaped val
   assert(!/[A-Za-z0-9+/=_-]{32,}/.test(skill), 'a long token-shaped word');
 });
 
+check('UP-14 the whole skill text (frontmatter, prose, spans, fences) holds no setup, activate, repair, marrow-mcp or npx outside the one command', () => {
+  assert(skill !== null, 'no skill');
+  const NEVER_RUNS = "This skill never runs Marrow's setup, activate or repair commands directly.";
+  const rest = skill.replace(NEVER_RUNS, '').split(UPDATE_COMMAND).join('');
+  const hit = /setup|activate|repair|marrow-mcp|npx/i.exec(rest);
+  assert(!hit, `the skill text holds ${JSON.stringify(hit && hit[0])} outside the one allowed command`);
+});
+
 check(`VER Claude Code plugin.json version is ${PLUGIN_VERSION} and metadata.pins is ${MCP_VERSION} and ${SDK_VERSION}`, () => {
   const plugin = json('plugins/marrow/.claude-plugin/plugin.json');
   assert(plugin.version === PLUGIN_VERSION, `version ${plugin.version}`);
