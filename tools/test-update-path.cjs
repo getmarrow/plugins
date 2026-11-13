@@ -11,7 +11,7 @@ const UPDATE_COMMAND = 'npx @getmarrow/install@latest update';
 const SLASH_WORDS = ['/reload-plugins', '/marrow:update'];
 const PLUGIN_VERSION = '0.2.8';
 const CURSOR_VERSION = '0.1.8';
-const MCP_VERSION = '3.9.112';
+const MCP_VERSION = '3.9.113';
 const SDK_VERSION = '3.7.67';
 const SHARED_FILES = ['package.json', 'package-lock.json', 'scripts/marrow-launch.cjs', 'scripts/mcp-manifest.json'];
 
