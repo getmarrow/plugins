@@ -51,7 +51,7 @@ The plugin pins its packages and never updates itself or any other package. When
 
 ```bash
 claude plugin marketplace update getmarrow
-claude plugin update marrow@getmarrow
+claude plugin update marrow@getmarrow -s <the installed scope> -y
 ```
 
-Then `/reload-plugins`. To remove Marrow from Claude Code: `claude plugin uninstall marrow@getmarrow`. Uninstalling removes the hooks and the MCP server with it.
+The owner can also run `/marrow:update`, which does the same in one step. Then `/reload-plugins`. To remove Marrow from Claude Code: `claude plugin uninstall marrow@getmarrow`. Uninstalling removes the hooks and the MCP server with it.

@@ -107,7 +107,7 @@ The plugins carry the hooks, so the hold message's "run the installer activate c
 
 ```bash
 claude plugin marketplace update getmarrow
-claude plugin update marrow@getmarrow
+claude plugin update marrow@getmarrow -s <the installed scope> -y
 ```
 
 Cursor cannot install Marrow yet, so there is nothing to update there.
