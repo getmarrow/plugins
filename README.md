@@ -174,7 +174,7 @@ Maintainers: `node tools/codex-check.cjs <marrow-install>/src/pins.js <marrow-mc
 
 ## Using Marrow with other agents
 
-Gemini CLI, Windsurf and other hosts get Marrow from the installer, run by the owner in a terminal: `MARROW_API_KEY=<your_key> npx -y @getmarrow/install@latest activate`, then `npx -y @getmarrow/install@latest doctor`. The skills for those agents are at https://github.com/getmarrow/skills.
+Gemini CLI, Windsurf and other hosts get Marrow from the installer, run by the owner in a terminal: save the key in the owner-only file `~/.marrow/env` with the [key-file block above](#without-a-key-the-keyless-seatbelt) (or load it from a secret manager into `MARROW_API_KEY` for that shell session; never type the key itself into a command or a prompt), then run `npx -y @getmarrow/install@latest activate`, then `npx -y @getmarrow/install@latest doctor`. The skills for those agents are at https://github.com/getmarrow/skills.
 
 ## Maintainers: changing the pins
 

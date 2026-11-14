@@ -836,7 +836,9 @@ check('Cursor and Codex have no keyless line: no file of theirs holds the notice
   const sh = (args) => spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
   const hits = sh(['grep', '-il', '-E', 'seatbelt is on|keyless seatbelt', '--', 'plugins/marrow-cursor', 'codex']).stdout.split('\n').filter(Boolean).filter((f) => !f.includes('node_modules'));
   for (const f of hits) assert.ok(!fs.readFileSync(path.join(repo, f), 'utf8').includes('Marrow seatbelt is on'), `${f} holds the notice`);
-  const changed = sh(['diff', '--name-only', MASTER_SHA, '--', 'plugins/marrow-cursor', 'codex']).stdout.split('\n').filter(Boolean).sort();
+  // The Codex skill text moved later (the key goes in ~/.marrow/env, never on a command line); tools/test-launcher-t2.cjs pins its bytes.
+  const SKILL_TEXT = ['codex/marrow-advisory/skills/marrow/SKILL.md', 'codex/marrow/skills/marrow/SKILL.md'];
+  const changed = sh(['diff', '--name-only', MASTER_SHA, '--', 'plugins/marrow-cursor', 'codex']).stdout.split('\n').filter(Boolean).filter((f) => !SKILL_TEXT.includes(f)).sort();
   const expected = [...CURSOR_REPIN_FILES, WIN_LAUNCHER].sort();
   assert.deepStrictEqual(changed, expected, `the Cursor and Codex files that differ from master are not exactly the six Cursor repin files and the Cursor launcher: ${changed.join(',')}`);
   assert.ok(!changed.some((f) => f.startsWith('codex/')), 'a Codex file differs from master');

@@ -55,19 +55,19 @@ Start a new Codex session, then review and trust the Marrow hooks in `/hooks`; C
 **Gemini CLI, Windsurf, Cline, Grok** (and Cursor without the plugin):
 
 1. Create an agent key at https://getmarrow.ai.
-2. In the project's terminal: `MARROW_API_KEY=<your_key> npx -y @getmarrow/install@latest activate`. It detects the hosts, writes Marrow's hooks and MCP configuration, keeps the owner's other settings, and runs a self-test. Without a key it stops before writing anything.
+2. In the project's terminal, save the key in the owner-only file `~/.marrow/env` (an editor keeps it out of shell history and process listings), then run `npx -y @getmarrow/install@latest activate`:
+
+   ```bash
+   mkdir -p ~/.marrow && chmod 700 ~/.marrow
+   ${EDITOR:-nano} ~/.marrow/env          # one line: MARROW_API_KEY=<your_key>
+   chmod 600 ~/.marrow/env
+   ```
+
+   If the owner cannot write that file, load the key from a secret manager into `MARROW_API_KEY` for that shell session (never type the key itself into a command or a prompt), then run the same `activate` command. It detects the hosts, writes Marrow's hooks and MCP configuration, keeps the owner's other settings, and runs a self-test. Without a key it stops before writing anything.
 3. Restart the host and finish its hook review. Each host's step is in [references/hosts.md](references/hosts.md).
 4. Verify: `npx -y @getmarrow/install@latest doctor`.
 
-To keep the key in a file instead of the environment, the owner runs:
-
-```bash
-mkdir -p ~/.marrow && chmod 700 ~/.marrow
-# put MARROW_API_KEY=<your_key> in ~/.marrow/env
-chmod 600 ~/.marrow/env
-```
-
-To connect an account with the Claude Code, Cursor or Codex plugin installed, the plugin needs only that key file (or `MARROW_API_KEY`), then a reload or restart. Do not run step 2 for that host in the same project, even when a Marrow message says to run the installer activate command: step 2 writes a second copy of the hooks, which then run twice next to the plugin's. If both are there, the owner chooses which copy to keep.
+To connect an account with the Claude Code, Cursor or Codex plugin installed, the plugin needs only the key file from step 2 (or `MARROW_API_KEY`), then a reload or restart. Do not run step 2 for that host in the same project, even when a Marrow message says to run the installer activate command: step 2 writes a second copy of the hooks, which then run twice next to the plugin's. If both are there, the owner chooses which copy to keep.
 
 ## Updates and removal
 

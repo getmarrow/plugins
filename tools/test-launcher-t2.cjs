@@ -103,7 +103,7 @@ const TEST_FILE_SHA256 = {
   'tools/pins-check-ci.cjs': '2f89935cfcd52f6cd166008051e2df616cb7fa277671c712eb191ad9833ed1d0',
   'tools/test-launcher-lock.cjs': 'a39ff03932bb3e80b66bf25616cecf0e293ceb33aebb9c9c11ce3b1caa8f2940',
   'tools/test-launcher.cjs': '84fd0439fdf2340d05c0e547784f5ce073001e608fb60e2710b6641472b9c9c6',
-  'tools/test-session-check.cjs': 'db5a4308d0dbe27b2793b21cbe384ade85011241e7c70e2cf316b7168ab635ea',
+  'tools/test-session-check.cjs': '6ec82cdcde1dde4a04d45b9e2fd77debb160187ae38f1a186252505745bf75ac',
 };
 // The two files of the pub-fix ride (0de66126): SECURITY.md and the CODEOWNERS file. T2-13 is a closed set, so they are named and pinned to
 // their sha256 the same way; no other name is added for them.
@@ -112,6 +112,12 @@ const PUB_FILE_SHA256 = {
   'SECURITY.md': '3d7059a171ae6886ef40ba04c89cc01a59ec9967507a290bcd22d770c1deb08f',
 };
 const PUB_FILES = Object.keys(PUB_FILE_SHA256).sort();
+// The two files of the no-key-on-a-command-line check: the check itself and the workflow step that runs it, pinned the same way.
+const INLINE_KEY_FILE_SHA256 = {
+  '.github/workflows/codex-plugin-pins.yml': '248636ba845aa60c7a0a2f9774c418f04b51dd4c6a0b3200c7ee7caff898fbab',
+  'tools/test-no-inline-key.cjs': 'a57c191c1415b626be355c6c4c070f0d641477bf21a4790aa466cafc8886125f',
+};
+const INLINE_KEY_FILES = Object.keys(INLINE_KEY_FILE_SHA256).sort();
 // The two vendored files of the MCP 3.9.109 pack that moved with the repin (tools/mcp-pins): the pack's own dist/codex-plugin-pins.js and the SHA256SUMS that holds its digest. T2-13 is a closed set,
 // so they are named and pinned to their sha256 the same way (F8 pattern). The check script beside them is byte-identical to the base and needs no name; SOURCE.md is already in PIN_FILES.
 const VENDOR_FILE_SHA256 = {
@@ -158,13 +164,13 @@ const CODEX_FILE_SHA256 = {
   'codex/marrow-advisory/package-lock.json': '8c3baacb067c5c6d7a0f2cb64f3de97d8a19e7e746b12c8d8e6625b399415d7f',
   'codex/marrow-advisory/package.json': '968531e5de020e9dd32b1108dd78ee6e05bd93dde9f431087fdd069f47d95175',
   'codex/marrow-advisory/scripts/mcp-manifest.json': '9580d83df88010a2575e08ce5c59121cb2b1363578baeb2a68bb6abf75de2240',
-  'codex/marrow-advisory/skills/marrow/SKILL.md': 'ec13a67d29dfc7f266c4e484f2e25b68bbed60025812912c3bc96a4c2a8209d8',
+  'codex/marrow-advisory/skills/marrow/SKILL.md': 'd80a4db4c6f532caa1bfcc7d2bad61edeec4e89aa4e274cbf2e1929cce9c35a5',
   'codex/marrow-advisory/skills/marrow/references/hosts.md': 'aea8c2be3feeae692677cde1b46487e4493620718d7aee23fd4265ff62d4a155',
   'codex/marrow/.codex-plugin/plugin.json': '6c772bfff5cdc4ce78072cda02de8639ed24e6c82347ee0273545dba329bc77e',
   'codex/marrow/package-lock.json': '70a87cedeb0b099d32245327492e3a5ba4e73a7af24af68d2ce6053cfd51cb07',
   'codex/marrow/package.json': '992754b4809addb2f19de3bc81ef87caf77ae97b14f0a8da73669b21b8a7559d',
   'codex/marrow/scripts/mcp-manifest.json': '9580d83df88010a2575e08ce5c59121cb2b1363578baeb2a68bb6abf75de2240',
-  'codex/marrow/skills/marrow/SKILL.md': 'ec13a67d29dfc7f266c4e484f2e25b68bbed60025812912c3bc96a4c2a8209d8',
+  'codex/marrow/skills/marrow/SKILL.md': 'd80a4db4c6f532caa1bfcc7d2bad61edeec4e89aa4e274cbf2e1929cce9c35a5',
   'codex/marrow/skills/marrow/references/hosts.md': 'aea8c2be3feeae692677cde1b46487e4493620718d7aee23fd4265ff62d4a155',
 };
 // The Windows CI commit (WIN26) sits on top of the candidate and adds only these files; T2-13 does not count them as a change of the
@@ -1580,14 +1586,14 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
       'tools/check.cjs', 'tools/test-launcher-lock.cjs', 'tools/test-launcher-t2.cjs', 'tools/test-launcher-win32.cjs', 'tools/test-launcher.cjs', 'tools/test-session-check.cjs'];
     const differingFrom = (dir) => [...new Set([...walk(dir), ...walk(repo)])].filter((f) => !fs.existsSync(path.join(dir, f)) || !fs.existsSync(path.join(repo, f)) || !bytes(dir, f).equals(bytes(repo, f))).sort();
     const differingPrepin = differingFrom(prepinDir);
-    const expectedPrepin = [...new Set([...PIN_FILES, ...CODEX_PIN_FILES, ...TEST_COMMIT_FILES, ...BRANCH_FILES, ...PUB_FILES, ...VENDOR_FILES, ...UPDATE_FILES])].sort();
-    const expectedOld = [...new Set([...expected, ...PIN_FILES, ...CODEX_PIN_FILES, ...TEST_COMMIT_FILES, ...PUB_FILES, ...VENDOR_FILES, ...UPDATE_FILES])].sort();
+    const expectedPrepin = [...new Set([...PIN_FILES, ...CODEX_PIN_FILES, ...TEST_COMMIT_FILES, ...BRANCH_FILES, ...PUB_FILES, ...INLINE_KEY_FILES, ...VENDOR_FILES, ...UPDATE_FILES])].sort();
+    const expectedOld = [...new Set([...expected, ...PIN_FILES, ...CODEX_PIN_FILES, ...TEST_COMMIT_FILES, ...PUB_FILES, ...INLINE_KEY_FILES, ...VENDOR_FILES, ...UPDATE_FILES])].sort();
     const list = (got, want) => (got.length === want.length ? `${got.length} files` : '') + (JSON.stringify(got) === JSON.stringify(want) ? '' : ` unexpected: ${got.filter((f) => !want.includes(f)).join(',')} missing: ${want.filter((f) => !got.includes(f)).join(',')}`);
     // Every name added to the expected sets besides the pin files is pinned to its sha256: the 13 test-only files of the child-isolation commits (TEST_FILE_SHA256)
     // the two files of the pub-fix ride (PUB_FILE_SHA256), the two vendored files of the 3.9.109 pack (VENDOR_FILE_SHA256) and the 12 Codex files of CODEX_PIN_FILES (CODEX_FILE_SHA256). The pin tables must name exactly those files; this file holds the pins, so its own name stays allowed as before.
-    const PINNED_SHA256 = { ...TEST_FILE_SHA256, ...PUB_FILE_SHA256, ...VENDOR_FILE_SHA256, ...CODEX_FILE_SHA256 };
+    const PINNED_SHA256 = { ...TEST_FILE_SHA256, ...PUB_FILE_SHA256, ...INLINE_KEY_FILE_SHA256, ...VENDOR_FILE_SHA256, ...CODEX_FILE_SHA256 };
     const pinnedNames = Object.keys(PINNED_SHA256).sort();
-    const pinsCoverAddedFiles = JSON.stringify(pinnedNames) === JSON.stringify([...TEST_COMMIT_FILES.filter((f) => f !== 'tools/test-launcher-t2.cjs'), ...PUB_FILES, ...VENDOR_FILES, ...CODEX_PIN_FILES].sort());
+    const pinsCoverAddedFiles = JSON.stringify(pinnedNames) === JSON.stringify([...TEST_COMMIT_FILES.filter((f) => f !== 'tools/test-launcher-t2.cjs'), ...PUB_FILES, ...INLINE_KEY_FILES, ...VENDOR_FILES, ...CODEX_PIN_FILES].sort());
     const pinMismatch = pinnedNames.filter((f) => !fs.existsSync(path.join(repo, f)) || crypto.createHash('sha256').update(bytes(repo, f)).digest('hex') !== PINNED_SHA256[f]);
     result(JSON.stringify(differingPrepin) === JSON.stringify(expectedPrepin) && JSON.stringify(differing) === JSON.stringify(expectedOld) && pinsCoverAddedFiles && pinMismatch.length === 0,
       'T2-13 exactly these files differ: against ccbe0c32 the 15 pin files named in PIN_FILES (both package.json, package-lock.json, mcp-manifest.json, plugin.json, SKILL.md and marketplace.json, both READMEs, tools/mcp-pins/SOURCE.md), the 12 Codex files named in CODEX_PIN_FILES, the eight BRANCH_FILES and the test-only files named in TEST_COMMIT_FILES (the 13 added by the child-isolation and network-guard commits only with the exact bytes pinned in TEST_FILE_SHA256) the two PUB_FILES (SECURITY.md and .github/CODEOWNERS, only with the exact bytes pinned in PUB_FILE_SHA256) and the two VENDOR_FILES (tools/mcp-pins/SHA256SUMS and tools/mcp-pins/dist/codex-plugin-pins.js, only with the exact bytes pinned in VENDOR_FILE_SHA256) and the 12 Codex files of CODEX_PIN_FILES (only with the exact bytes pinned in CODEX_FILE_SHA256), nothing else; against be64842b the same fri-train set as before plus the nine more pin files and the 12 Codex files', `since ccbe0c32: ${list(differingPrepin, expectedPrepin)}; since be64842b: ${list(differing, expectedOld)}; ${pinnedNames.length} added files pinned to their sha256: ${pinsCoverAddedFiles ? (pinMismatch.length ? `bytes differ: ${pinMismatch.join(',')}` : 'all equal') : 'the pin tables differ from TEST_COMMIT_FILES, PUB_FILES, VENDOR_FILES and CODEX_PIN_FILES'}`);
@@ -1596,7 +1602,7 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
     if (!noticeBaseDir) { result(false, 'T2-13 the branch base (5c657b1c) is available for the moved-files comparison', noticeBaseError); } else {
       const differingBase = differingFrom(noticeBaseDir);
       const differingBaseline = differingFrom(baselineDir);
-      const expectedBase = [...new Set([...BRANCH_FILES, ...PIN_FILES, ...CODEX_PIN_FILES, ...TEST_COMMIT_FILES, ...PUB_FILES, ...VENDOR_FILES, ...UPDATE_FILES])].sort();
+      const expectedBase = [...new Set([...BRANCH_FILES, ...PIN_FILES, ...CODEX_PIN_FILES, ...TEST_COMMIT_FILES, ...PUB_FILES, ...INLINE_KEY_FILES, ...VENDOR_FILES, ...UPDATE_FILES])].sort();
       result(JSON.stringify(differingBase) === JSON.stringify(expectedBase) && JSON.stringify(differingBaseline) === JSON.stringify(expectedBase),
         'T2-13 against 5c657b1c (the base of this branch and the baseline) exactly the eight BRANCH_FILES (both launchers, the session check, tools/check.cjs, this test file, tools/test-session-check.cjs, .gitattributes, tools/test-launcher-win32.cjs), the 15 PIN_FILES, the 12 CODEX_PIN_FILES, the test-only files of TEST_COMMIT_FILES, the two PUB_FILES, the two VENDOR_FILES and the 12 CODEX_PIN_FILES differ (the added names only with their pinned bytes), nothing else',
         `since 5c657b1c: ${list(differingBase, expectedBase)}; since the baseline: ${list(differingBaseline, expectedBase)}`);

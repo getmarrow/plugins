@@ -22,3 +22,6 @@ jobs:
 
       - name: Pins check (vendored MCP check, SHA-256 verified, plus one-byte self-test)
         run: node tools/pins-check-ci.cjs
+
+      - name: No API key on a command line in any Markdown file (with its corpus self-test)
+        run: node tools/test-no-inline-key.cjs
