@@ -1,8 +1,8 @@
 {
   "schema": "marrow-plugin-mcp-manifest.v1",
   "mcp": {
-    "version": "3.9.113",
-    "integrity": "sha512-SgKlbsCN6F2pQXCy2kq9Zjyp2no69vfVv+Ub1oALzDO/ft1OrBi8aOXOWtNO0aD610ZgPNwD6atjtBTeYYQ0fg=="
+    "version": "3.9.114",
+    "integrity": "sha512-pufn9UVwx3mw7Dh0NOc5Oaq0jX/Vd0otYR0x1HzAYM92am9fkaPBf44C5YQVCxgB8fqTn+ABcptSosibIRvMjQ=="
   },
   "sdk": {
     "version": "3.7.67",
@@ -164,6 +164,10 @@
     "@getmarrow/mcp/dist/runtime-contract.d.ts.map",
     "@getmarrow/mcp/dist/runtime-contract.js",
     "@getmarrow/mcp/dist/runtime-contract.js.map",
+    "@getmarrow/mcp/dist/script-attach.d.ts",
+    "@getmarrow/mcp/dist/script-attach.d.ts.map",
+    "@getmarrow/mcp/dist/script-attach.js",
+    "@getmarrow/mcp/dist/script-attach.js.map",
     "@getmarrow/mcp/dist/seatbelt/classifier-pin.d.ts",
     "@getmarrow/mcp/dist/seatbelt/classifier-pin.d.ts.map",
     "@getmarrow/mcp/dist/seatbelt/classifier-pin.js",
@@ -330,9 +334,9 @@
     "@getmarrow/sdk/dist/types.js.map",
     "@getmarrow/sdk/package.json"
   ],
-  "sha256": "9bd5f032956f36265b65ae5037f4011d4f73a4d6a5c232f68722b0debc1dce2d",
+  "sha256": "9cc9151cf9f03a3f65f673e9827465b737c36abf449414e3fb109e2017d734de",
   "source": {
     "repository": "getmarrow/marrow-mcp",
-    "commit": "12b766c5ece1d2b8636db3dacecd5dd831a853a4"
+    "commit": "48b1fbec80ab3f7243126536b2de18fc82c6f1b7"
   }
 }

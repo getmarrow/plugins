@@ -1,18 +1,18 @@
 # Vendored MCP pins check
 
-`dist/codex-plugin-pins.js` is the `@getmarrow/mcp` 3.9.113 pack's own `package/dist/codex-plugin-pins.js`
-(getmarrow/marrow-mcp commit `12b766c5ece1d2b8636db3dacecd5dd831a853a4`, built from `src/codex-plugin-pins.ts`); it is
-byte-identical to the 3.9.109 and 3.9.108 packs', so its digest is unchanged. `scripts/codex-plugin-pins-check.cjs` is the check script of
+`dist/codex-plugin-pins.js` is the `@getmarrow/mcp` 3.9.114 pack's own `package/dist/codex-plugin-pins.js`
+(getmarrow/marrow-mcp commit `48b1fbec80ab3f7243126536b2de18fc82c6f1b7`, built from `src/codex-plugin-pins.ts`); it is
+byte-identical to the 3.9.113, 3.9.109 and 3.9.108 packs', so its digest is unchanged. `scripts/codex-plugin-pins-check.cjs` is the check script of
 getmarrow/marrow-mcp commit `e3752f3baa511bb3071b73f521ba2b3bb526d0fd` (the 3.9.108 release commit), unchanged since 3.9.107: the
-pack does not ship it, and it was not re-fetched for 3.9.113.
+pack does not ship it, and it was not re-fetched for 3.9.114.
 
 | Here | There |
 | --- | --- |
 | `scripts/codex-plugin-pins-check.cjs` | `scripts/codex-plugin-pins-check.cjs` (commit `e3752f3b`) |
-| `dist/codex-plugin-pins.js` | `dist/codex-plugin-pins.js` (the 3.9.113 pack; commit `12b766c5`) |
+| `dist/codex-plugin-pins.js` | `dist/codex-plugin-pins.js` (the 3.9.114 pack; commit `48b1fbec`) |
 
-The pack is `@getmarrow/mcp` 3.9.113, sha512 integrity
-`sha512-SgKlbsCN6F2pQXCy2kq9Zjyp2no69vfVv+Ub1oALzDO/ft1OrBi8aOXOWtNO0aD610ZgPNwD6atjtBTeYYQ0fg==`.
+The pack is `@getmarrow/mcp` 3.9.114, sha512 integrity
+`sha512-pufn9UVwx3mw7Dh0NOc5Oaq0jX/Vd0otYR0x1HzAYM92am9fkaPBf44C5YQVCxgB8fqTn+ABcptSosibIRvMjQ==`.
 
 `SHA256SUMS` holds their digests; `tools/pins-check-ci.cjs` checks them before it runs anything.
 
