@@ -1,8 +1,8 @@
 {
   "schema": "marrow-plugin-mcp-manifest.v1",
   "mcp": {
-    "version": "3.9.114",
-    "integrity": "sha512-pufn9UVwx3mw7Dh0NOc5Oaq0jX/Vd0otYR0x1HzAYM92am9fkaPBf44C5YQVCxgB8fqTn+ABcptSosibIRvMjQ=="
+    "version": "3.9.115",
+    "integrity": "sha512-42V7cmxSqY1/nZGWnjLWcHNqPMUgg4YXISmn0n7gPHec4SIB8UrF5X6OwZxhCHPPq6tXXoRq1lSFnofGuMwZBw=="
   },
   "sdk": {
     "version": "3.7.67",
@@ -68,6 +68,10 @@
     "@getmarrow/mcp/dist/hook-contract.d.ts.map",
     "@getmarrow/mcp/dist/hook-contract.js",
     "@getmarrow/mcp/dist/hook-contract.js.map",
+    "@getmarrow/mcp/dist/hook-label-shapes.d.ts",
+    "@getmarrow/mcp/dist/hook-label-shapes.d.ts.map",
+    "@getmarrow/mcp/dist/hook-label-shapes.js",
+    "@getmarrow/mcp/dist/hook-label-shapes.js.map",
     "@getmarrow/mcp/dist/hook-pre-action.d.ts",
     "@getmarrow/mcp/dist/hook-pre-action.d.ts.map",
     "@getmarrow/mcp/dist/hook-pre-action.js",
@@ -276,6 +280,10 @@
     "@getmarrow/mcp/dist/types.d.ts.map",
     "@getmarrow/mcp/dist/types.js",
     "@getmarrow/mcp/dist/types.js.map",
+    "@getmarrow/mcp/dist/update-notice.d.ts",
+    "@getmarrow/mcp/dist/update-notice.d.ts.map",
+    "@getmarrow/mcp/dist/update-notice.js",
+    "@getmarrow/mcp/dist/update-notice.js.map",
     "@getmarrow/mcp/dist/win-private-state.d.ts",
     "@getmarrow/mcp/dist/win-private-state.d.ts.map",
     "@getmarrow/mcp/dist/win-private-state.js",
@@ -334,9 +342,9 @@
     "@getmarrow/sdk/dist/types.js.map",
     "@getmarrow/sdk/package.json"
   ],
-  "sha256": "9cc9151cf9f03a3f65f673e9827465b737c36abf449414e3fb109e2017d734de",
+  "sha256": "ac7c568eee9e4d4bb45349395b285fb9b65abe5d82b3283af873f45ad0b0a665",
   "source": {
     "repository": "getmarrow/marrow-mcp",
-    "commit": "48b1fbec80ab3f7243126536b2de18fc82c6f1b7"
+    "commit": "d3dea44c4b213975ceb71458a4951ed4d1fd3db3"
   }
 }
