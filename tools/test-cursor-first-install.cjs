@@ -10,6 +10,7 @@
 // Every child runs in the private offline npm environment of test/npm-env.cjs with the loopback network guard. The verified
 // copy rows need the pinned tarballs in the cache named by npm_config_cache (as tools/test-launcher.cjs does).
 // A dummy key is generated at runtime and must appear in no output.
+require('../test/isolate.cjs'); // private HOME and spawn guard for every child this tool starts (test/child-isolation.cjs)
 const netGuard = require('../test/net-guard.cjs');
 const npmEnvironment = require('../test/npm-env.cjs');
 const { spawnSync } = require('child_process');

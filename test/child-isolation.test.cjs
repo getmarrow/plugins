@@ -462,7 +462,7 @@ test('static: every tool that can start a child loads the isolation before child
   const ISOLATE = "require('../test/isolate.cjs')";
   const tools = fs.readdirSync(path.join(REPO_ROOT, 'tools')).filter((name) => name.endsWith('.cjs'));
   const spawners = tools.filter((name) => CHILD.test(READ(path.join(REPO_ROOT, 'tools', name)))).sort();
-  assert.deepEqual(spawners, ['bench-hooks.cjs', 'pins-check-ci.cjs', 'test-launcher-lock.cjs', 'test-launcher-t2.cjs', 'test-launcher-win32.cjs', 'test-launcher.cjs', 'test-session-check.cjs']);
+  assert.deepEqual(spawners, ['bench-hooks.cjs', 'pins-check-ci.cjs', 'test-cursor-first-install.cjs', 'test-launcher-lock.cjs', 'test-launcher-t2.cjs', 'test-launcher-win32.cjs', 'test-launcher.cjs', 'test-session-check.cjs']);
   for (const name of spawners) {
     const text = READ(path.join(REPO_ROOT, 'tools', name));
     const first = text.indexOf(ISOLATE);
