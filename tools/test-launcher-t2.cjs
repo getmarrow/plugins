@@ -105,7 +105,7 @@ const TEST_FILE_SHA256 = {
   'tools/test-cursor-first-install.cjs': 'a4ba87e2360205f6e3f4f0cc242f2edef2809603615e6aae1c31e8eb47fbc5a2',
   'tools/test-launcher-lock.cjs': 'a39ff03932bb3e80b66bf25616cecf0e293ceb33aebb9c9c11ce3b1caa8f2940',
   'tools/test-launcher.cjs': '84fd0439fdf2340d05c0e547784f5ce073001e608fb60e2710b6641472b9c9c6',
-  'tools/test-session-check.cjs': '6ec82cdcde1dde4a04d45b9e2fd77debb160187ae38f1a186252505745bf75ac',
+  'tools/test-session-check.cjs': 'd6579787bf6dd6a67a854a27f4b87f2735a1b3ff4fe4d8f5997df4313ad10f5a',
 };
 // The two files of the pub-fix ride (0de66126): SECURITY.md and the CODEOWNERS file. T2-13 is a closed set, so they are named and pinned to
 // their sha256 the same way; no other name is added for them.

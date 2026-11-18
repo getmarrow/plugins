@@ -822,7 +822,7 @@ check('hooks.json constants in the script equal the shipped hooks.json PreToolUs
 
 // The one Cursor file the Windows-retry item changes (the bounded win32 retry of a directory rename or remove); the Claude-side copy is the same bytes (W32-3).
 const WIN_LAUNCHER = 'plugins/marrow-cursor/scripts/marrow-launch.cjs';
-const WIN_LAUNCHER_SHA256 = '1289f2044ed5f3d4780b91f827ce2f556f0c9114495443e309aa254b82f17d66';
+const WIN_LAUNCHER_SHA256 = '8473187752f3b359dba5ea3a0b393ce01b7b608983a289d06ac3532ecf5f20a5';
 // The six Cursor files the repin to MCP 3.9.109 changes (pin, version and copy lines only; T2-13 holds their exact set against the pin commits).
 const CURSOR_REPIN_FILES = [
   'plugins/marrow-cursor/.cursor-plugin/plugin.json',
