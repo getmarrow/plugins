@@ -23,6 +23,13 @@ const work = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'marrow-first
 const NPM = npmEnvironment.create({ root: work });
 const KEY = `dummy_first_install_${crypto.randomBytes(16).toString('hex')}`;
 if (/^(sk_|pk_|rk_|ghp_|xox|mk_)/.test(KEY)) throw new Error('dummy key is shaped like a live key');
+// A second runtime dummy in a fleet key variable (MARROW_KEY_<NAME>, which the launcher reads), for the fleet-key-only runs.
+const FLEET_KEY = `dummy_first_install_fleet_${crypto.randomBytes(16).toString('hex')}`;
+if (/^(sk_|pk_|rk_|ghp_|xox|mk_)/.test(FLEET_KEY)) throw new Error('dummy fleet key is shaped like a live key');
+const KEYED = [{ label: 'a dummy key', extra: { MARROW_API_KEY: KEY } }, { label: 'a fleet key only', extra: { MARROW_KEY_FIRST_INSTALL: FLEET_KEY } }];
+// The random part of each dummy and every 8-character slice of it, in lower case: no stream may hold one.
+const KEY_SLICES = [KEY, FLEET_KEY].map((k) => k.slice(k.lastIndexOf('_') + 1))
+  .flatMap((part) => Array.from({ length: part.length - 7 }, (_, i) => part.slice(i, i + 8)));
 
 let pass = 0;
 let fail = 0;
@@ -130,6 +137,29 @@ for (const t of TREES) {
       `${t.cursor ? 'T-1' : 'T-2'} ${t.host} first use: ${entry} reports the installing text, exit 1 as before`, show(r));
     result(recorder.calls() === before, `T-4 ${t.host} first use: ${entry} started no npm`, `${recorder.calls() - before} calls`);
   }
+  // The same first-use runs with a dummy key, and with a fleet key only: the same answer, exit code, permission value and
+  // installing text as the keyless runs, and their streams go to the outputs the output row reads.
+  for (const k of KEYED) {
+    for (const h of homes) {
+      const home = freshHome(`${t.tree}-${k.label}-${h.label}`.replace(/ /g, '-'));
+      let data;
+      if (h.data === 'data') { data = path.join(home, 'plugin-data'); fs.mkdirSync(data, { mode: 0o700 }); }
+      const before = recorder.calls();
+      const r = run({ dir, entry: t.pre, home, data: h.data === null ? undefined : data, extra: k.extra });
+      result(heldAnswer(t, r, IDLE_REASON, installing(t)) && !(r.stdout + r.stderr).includes('Reconnect to the network'),
+        `${t.cursor ? 'T-1' : 'T-2'} ${t.host} first use with ${k.label} (${h.label}): ${t.pre} holds the call with the installing text`, show(r));
+      result(recorder.calls() === before, `T-4 ${t.host} first use with ${k.label} (${h.label}): ${t.pre} started no npm`, `${recorder.calls() - before} calls`);
+      if (t.cursor) result(!fs.existsSync(path.join(home, '.marrow')), `T-4 Cursor first use with ${k.label}: a tool hook created no data folder`);
+    }
+    for (const entry of t.tools.filter((e) => e !== t.pre)) {
+      const home = freshHome(`${t.tree}-${k.label}-${entry}`.replace(/ /g, '-'));
+      const before = recorder.calls();
+      const r = run({ dir, entry, home, data: t.cursor ? undefined : path.join(home, 'none'), extra: k.extra });
+      result(r.status === 1 && r.stdout === '' && r.stderr === `Marrow plugin: ${IDLE_REASON} ${installing(t)}\n`,
+        `${t.cursor ? 'T-1' : 'T-2'} ${t.host} first use with ${k.label}: ${entry} reports the installing text, exit 1 as before`, show(r));
+      result(recorder.calls() === before, `T-4 ${t.host} first use with ${k.label}: ${entry} started no npm`, `${recorder.calls() - before} calls`);
+    }
+  }
 
   // ---- T-3: every other cause, BASE text byte for byte ---------------------------------------------------------------
   const installFrom = (label, opts) => {
@@ -201,6 +231,9 @@ for (const t of TREES) {
 
 // ---- the dummy key never appears in any output -----------------------------------------------------------------------
 result(outputs.every((o) => !o.includes(KEY)), 'output: the dummy key appears in no stdout or stderr', `${outputs.length} streams`);
+const keyHits = outputs.filter((o) => { const lower = o.toLowerCase(); return o.includes(KEY) || o.includes(FLEET_KEY) || KEY_SLICES.some((s) => lower.includes(s)); }).length;
+result(keyHits === 0, 'output: no dummy key, fleet key, random part or 8-character slice of one appears in any stdout or stderr (keyed first use included)',
+  `${keyHits} of ${outputs.length} streams`);
 const attempts = (() => { try { return netGuard.assertNoAttempts([NPM.log]); } catch (error) { return String(error.message); } })();
 result(!attempts, 'no child tried a non-loopback connection', attempts || '');
 
