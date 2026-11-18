@@ -71,6 +71,8 @@ const REINSTALL = CURSOR
   : 'ask the owner to reinstall the plugin: '
     + 'claude plugin uninstall marrow@getmarrow, then claude plugin install marrow@getmarrow.';
 const FIX_NETWORK = `Reconnect to the network and retry, or ${REINSTALL}`;
+// No copy yet: it is installed when the Marrow server starts or on the first prompt, so the network is not named as the cause.
+const FIX_INSTALLING = `The install can take a few minutes; retry the action after it finishes. If this keeps happening, restart ${HOST_NAME} so the Marrow server can install it again, and check the network, or ${REINSTALL}`;
 const FIX_TOOLCHAIN = `Install Node.js ${NODE_MIN} or newer with npm on PATH, then restart ${HOST_NAME}.`;
 const FIX_REINSTALL = `${REINSTALL[0].toUpperCase()}${REINSTALL.slice(1)}`;
 const FIX_WAIT = `Wait for the other start to finish, then restart ${HOST_NAME}.`;
@@ -87,7 +89,7 @@ const CAUSES = {
   // A tool hook only looks for a copy; it never installs one.
   idle: {
     reason: 'the pinned @getmarrow/mcp is not installed yet (the plugin installs it when its Marrow server starts or on your first prompt).',
-    fix: FIX_NETWORK,
+    fix: FIX_INSTALLING,
   },
   npm: {
     reason: 'npm was not found or could not be started, and it is needed to install the pinned @getmarrow/mcp once.',
