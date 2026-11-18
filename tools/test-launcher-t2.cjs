@@ -83,6 +83,7 @@ const TEST_COMMIT_FILES = [
   'test/npm-env.cjs',
   'tools/bench-hooks.cjs',
   'tools/pins-check-ci.cjs',
+  'tools/test-cursor-first-install.cjs',
   'tools/test-launcher-lock.cjs',
   'tools/test-launcher-t2.cjs',
   'tools/test-launcher.cjs',
@@ -92,7 +93,7 @@ const TEST_COMMIT_FILES = [
 // bytes and not any content under these names. This file holds the pins, so it cannot pin itself: its own name stays allowed as before.
 const TEST_FILE_SHA256 = {
   'test/child-isolation.cjs': 'ea1739f63ad04faddf7317695da34a6bd44dfd9fce05536368cdb1ef7d687107',
-  'test/child-isolation.test.cjs': '85ee48ab3ca3a4322b198c457a3712ceceaf2f95c9dbdf947008d86bda361ecc',
+  'test/child-isolation.test.cjs': 'a40644aa18499a6de28d7dd779cec543085ad06a7870f66c42a1d1c8ee760d00',
   'test/fixtures/git-push-local-control.cjs': '5da537afc24b7a32fb4e4a7242776a0e0a889c05d502777d80c2487d7b2c9cb2',
   'test/fixtures/git-push-swallow.cjs': '2d28c87eec0570d5f2cc50036df057df1d0e20cd1a7f92eb4ab9976aa70f8b8e',
   'test/fixtures/isolation-probe.cjs': 'aebbe483d52d3023ee487b126bdb9530a07c3e85f6d4c0415182dbc88c6367f2',
@@ -101,9 +102,10 @@ const TEST_FILE_SHA256 = {
   'test/npm-env.cjs': '0896cdc9494afbdc5b8be86298c1c1cd426193b1f3dfa825f4fdbfcb30141566',
   'tools/bench-hooks.cjs': '3b7d63f58871145cc378c47abaf29940b74dc8ae78538cb766a07ab4ae1e47a5',
   'tools/pins-check-ci.cjs': '2f89935cfcd52f6cd166008051e2df616cb7fa277671c712eb191ad9833ed1d0',
+  'tools/test-cursor-first-install.cjs': 'd1251dba0875d04cbe5006e6400f2db168460cfa83e2399deb6fd378c6167ba0',
   'tools/test-launcher-lock.cjs': 'a39ff03932bb3e80b66bf25616cecf0e293ceb33aebb9c9c11ce3b1caa8f2940',
   'tools/test-launcher.cjs': '84fd0439fdf2340d05c0e547784f5ce073001e608fb60e2710b6641472b9c9c6',
-  'tools/test-session-check.cjs': '6ec82cdcde1dde4a04d45b9e2fd77debb160187ae38f1a186252505745bf75ac',
+  'tools/test-session-check.cjs': 'd6579787bf6dd6a67a854a27f4b87f2735a1b3ff4fe4d8f5997df4313ad10f5a',
 };
 // The two files of the pub-fix ride (0de66126): SECURITY.md and the CODEOWNERS file. T2-13 is a closed set, so they are named and pinned to
 // their sha256 the same way; no other name is added for them.
