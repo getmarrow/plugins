@@ -16,7 +16,7 @@ Marrow is the approval and proof layer for agent actions. The marrow plugin adds
 2. When a hook holds a call, tell the person what is waiting and why, carry on with other work, and retry only after they approve in Claude Code's own prompt or as the hook says. Never approve, write or claim an approval yourself.
 3. Never edit, disable or work around Marrow's hooks, this plugin's files, Claude Code settings, hook trust or permission rules to get past a hold, and never ask the person to do so.
 4. After meaningful work, record the real result with `marrow_commit`. Only `committed: true` confirms closure. Leave unfinished work visible; never invent success.
-5. If Marrow is offline it says so. That is not a policy denial: low-risk work goes on and the record is queued locally. High-risk work still needs a fresh gate.
+5. If Marrow is unavailable (no connection or a server error) or does not answer in time, the hook says so and the routine action runs. That is not a policy denial. High-risk actions are held until Marrow answers; try them again then. When Marrow is unavailable, the record stays queued locally and is sent when Marrow answers.
 
 ## No key yet
 
