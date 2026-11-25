@@ -34,7 +34,9 @@ const BASELINE_REF = process.env.T2_BASELINE_REF || '5c657b1c959846161a21b2c2dff
 const PREPIN_REF = 'ccbe0c329365e8903e8c2b9227e2c17050e512f9';
 // The fri-train tip that pinned MCP 3.9.105 (never published). T2-13 keeps it as a file anchor only: unpacked, compared, never installed.
 const OLD_REF = 'be64842b6120af91edc44854569124b38730614f';
-const PINNED_VERSION = '3.9.115'; // @getmarrow/mcp as pinned by this tree
+const PINNED_VERSION = '3.9.116'; // @getmarrow/mcp as pinned by this tree
+const PINNED_SDK_VERSION = '3.8.0'; // @getmarrow/sdk as pinned by this tree
+const PREPIN_SDK_VERSION = '3.7.67'; // @getmarrow/sdk as pinned by PREPIN_REF
 const BASELINE_VERSION = '3.9.106'; // @getmarrow/mcp as pinned by the baseline 5c657b1c (published)
 const OLD_VERSION = '3.9.105'; // @getmarrow/mcp as pinned by PREPIN_REF and OLD_REF (never published)
 const DEAD_URL = 'https://127.0.0.1:9';
@@ -448,8 +450,36 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
   const withHonestFallback = (n) => (n.text.split(FALLBACK_OLD).length === 2
     ? { text: n.text.replace(FALLBACK_OLD, FALLBACK_NEW), paths: n.paths.filter((p) => !p.endsWith('/client_update/latest_version')) }
     : n);
+  // MCP 3.9.116 lets marrow_decision_trace and marrow_buyer_proof take a gate receipt id (tools/list, reviewed in the 3.9.116 notes). The
+  // baseline's tools/list line is changed by exactly this: gateReceiptId added as the LAST property of each of the two tools with the exact
+  // description below, and decision_trace's required list [decisionId] becomes []. It applies only when the baseline line has exactly the
+  // 3.9.106 shape of both tools (decision_trace properties [decisionId] with required [decisionId]; buyer_proof properties [agentId,
+  // periodDays]); any other shape is left as it is and fails. The candidate side is never changed.
+  const GATE_RECEIPT_TRACE = 'Instead of decisionId: a gate_receipt_id from marrow_agent_runtime. Returns that receipt\'s chain: what the loop did and which earlier approval it reused. Give exactly one of decisionId and gateReceiptId.';
+  const GATE_RECEIPT_PROOF = 'Optional: a gate_receipt_id. Returns the signed export of that receipt: content[0] is the response body exactly as Marrow sent it (keep it unchanged to verify it offline against the published signing keys), content[1] a small label with its sha256. agentId and periodDays are not used with it.';
+  const withGateReceipt = (n) => {
+    const lines = n.text.split('\n');
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    for (let i = 0; i < lines.length; i += 1) {
+      let value;
+      try { value = JSON.parse(lines[i]); } catch { continue; }
+      const tools = value && value.result && Array.isArray(value.result.tools) ? value.result.tools : null;
+      if (!tools) continue;
+      const trace = tools.filter((t) => t && t.name === 'marrow_decision_trace');
+      const proof = tools.filter((t) => t && t.name === 'marrow_buyer_proof');
+      const shape = (t) => (t && t.inputSchema && t.inputSchema.properties && typeof t.inputSchema.properties === 'object' ? Object.keys(t.inputSchema.properties) : null);
+      if (trace.length !== 1 || proof.length !== 1 || !same(shape(trace[0]), ['decisionId']) || !same(trace[0].inputSchema.required, ['decisionId'])
+        || !same(shape(proof[0]), ['agentId', 'periodDays'])) return n;
+      trace[0].inputSchema.properties.gateReceiptId = { type: 'string', description: GATE_RECEIPT_TRACE };
+      trace[0].inputSchema.required = [];
+      proof[0].inputSchema.properties.gateReceiptId = { type: 'string', description: GATE_RECEIPT_PROOF };
+      lines[i] = JSON.stringify(value);
+      return { text: lines.join('\n'), paths: n.paths };
+    }
+    return n;
+  };
   const sameApartFromVersions = (baseline, candidate, baselineVersion = BASELINE_VERSION, candidateVersion = PINNED_VERSION) => {
-    const b = withHonestFallback(normalizeVersions(withUpdateField(baseline.stdout), baselineVersion));
+    const b = withGateReceipt(withHonestFallback(normalizeVersions(withUpdateField(baseline.stdout), baselineVersion)));
     const c = normalizeVersions(candidate.stdout, candidateVersion);
     return baseline.status === candidate.status && baseline.stderr === candidate.stderr && b.text === c.text
       && b.paths.length > 0 && JSON.stringify(b.paths) === JSON.stringify(c.paths);
@@ -839,14 +869,20 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
       // The crash the badurl states print: the same statement in each pinned dist (the baseline 3.9.106 has it at line 603, the candidate 3.9.109 at line 628). The frames are equal
       // once each side's exact position (dist/cli.js:603:58 on the baseline, dist/cli.js:628:58 on the candidate) is read as that statement; the test reads the statement from both
       // dists, so a frame that moved is measured, not assumed.
-      const distLine = (dir, line) => (fs.readFileSync(path.join(dir, 'node_modules', '@getmarrow', 'mcp', 'dist', 'cli.js'), 'utf8').split('\n')[line - 1] || '');
+      const distLine = (dir, line, file = 'cli.js') => (fs.readFileSync(path.join(dir, 'node_modules', '@getmarrow', 'mcp', 'dist', file), 'utf8').split('\n')[line - 1] || '');
       const CRASH_STATEMENT = '(0, index_1.validateBaseUrl)(rawBaseUrl)';
       const BASELINE_CRASH_LINE = 603;
       const PINNED_CRASH_LINE = 719;
       const crashFramesOk = Boolean(baselinePlug) && distLine(baselinePlug, BASELINE_CRASH_LINE).includes(CRASH_STATEMENT) && distLine(plug, PINNED_CRASH_LINE).includes(CRASH_STATEMENT);
       // A crash prints a stack trace that names the plugin folder and the launcher's own frames (line numbers); only those and the pinned frame differ.
-      const crashText = (t, line) => t.replace(/plugin-\d+/g, 'plugin-#').replace(/marrow-launch\.cjs:\d+:\d+/g, 'marrow-launch.cjs:#:#')
-        .split(`dist/cli.js:${line}:58`).join('dist/cli.js:#:#');
+      // The throw inside validateBaseUrl sits INDEX_SHIFT lines lower in the 3.9.116 dist/index.js than in the 3.9.106 one (same statement, measured below).
+      // The baseline's dist/index.js frame lines are moved by exactly that shift; indexFramesOk reads the source line of every such frame in both dists and
+      // requires the two lines to be equal text that names MARROW_BASE_URL, and at least one such frame. New regex: /dist\/index\.js:(\d+)/g, linear in the stderr length.
+      const INDEX_SHIFT = 2;
+      const indexRefs = (t) => [...t.matchAll(/dist\/index\.js:(\d+)/g)].map((m) => Number(m[1]));
+      const indexFramesOk = (t) => { const refs = indexRefs(t); return Boolean(baselinePlug) && refs.length > 0 && refs.every((n) => distLine(baselinePlug, n, 'index.js').includes('MARROW_BASE_URL') && distLine(baselinePlug, n, 'index.js') === distLine(plug, n + INDEX_SHIFT, 'index.js')); };
+      const crashText = (t, line, shift = 0) => t.replace(/plugin-\d+/g, 'plugin-#').replace(/marrow-launch\.cjs:\d+:\d+/g, 'marrow-launch.cjs:#:#')
+        .split(`dist/cli.js:${line}:58`).join('dist/cli.js:#:#').replace(/dist\/index\.js:(\d+)/g, (m, n) => `dist/index.js:${Number(n) + shift}`);
       const KIND_TEXT = {
         keyless: 'the stub runs (and so does the baseline, its answer equal apart from the one exact version field) and the pinned 3.9.109 server, started directly, answers keyless: 0 tools, a tools/call error, no request, no file written',
         fleet: 'the launcher refuses (never the stub, never the server): exit 1 like the pinned server, nothing on stdout, exactly the fleet refusal text (no npx, no unpinned spec), no request, no key echoed',
@@ -937,7 +973,7 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
         } else if (oracleA !== null && kind === 'badurl') {
           const d = run(direct, plug);
           checks.baselineCrashed = oracleA.status === 1 && oracleA.stdout === '' && baselineOutcome(oracleA) === 'other';
-          checks.sameCrash = crashFramesOk && cand.status === oracleA.status && cand.stdout === oracleA.stdout && crashText(cand.stderr, PINNED_CRASH_LINE) === crashText(oracleA.stderr, BASELINE_CRASH_LINE);
+          checks.sameCrash = crashFramesOk && indexFramesOk(oracleA.stderr) && cand.status === oracleA.status && cand.stdout === oracleA.stdout && crashText(cand.stderr, PINNED_CRASH_LINE) === crashText(oracleA.stderr, BASELINE_CRASH_LINE, INDEX_SHIFT);
           checks.directCrashes = d.status === 1 && d.stdout === '' && d.stderr !== REQUIRED_LINE && d.stderr.includes('MARROW_BASE_URL');
         }
         const failed = Object.keys(checks).filter((k) => !checks[k]);
@@ -1646,11 +1682,14 @@ process.on('exit', () => { writeLog.call(fs, log, JSON.stringify(counts)); });
     const lockMcp = (dir, plugin) => JSON.parse(bytes(dir, plugin, 'package-lock.json')).packages['node_modules/@getmarrow/mcp'].version;
     const depsNow = depsOf(repo, 'plugins/marrow');
     const depsWas = depsOf(prepinDir, 'plugins/marrow');
-    const apartFromMcp = (d) => JSON.stringify(Object.entries(d).filter(([k]) => k !== '@getmarrow/mcp'));
-    result(depsNow['@getmarrow/mcp'] === PINNED_VERSION && depsWas['@getmarrow/mcp'] === OLD_VERSION && apartFromMcp(depsNow) === apartFromMcp(depsWas)
+    const lockSdk = (dir, plugin) => JSON.parse(bytes(dir, plugin, 'package-lock.json')).packages['node_modules/@getmarrow/sdk'].version;
+    const apartFromPins = (d) => JSON.stringify(Object.entries(d).filter(([k]) => k !== '@getmarrow/mcp' && k !== '@getmarrow/sdk'));
+    result(depsNow['@getmarrow/mcp'] === PINNED_VERSION && depsWas['@getmarrow/mcp'] === OLD_VERSION && apartFromPins(depsNow) === apartFromPins(depsWas)
+      && depsNow['@getmarrow/sdk'] === PINNED_SDK_VERSION && depsWas['@getmarrow/sdk'] === PREPIN_SDK_VERSION
       && Object.keys(depsNow).length === Object.keys(depsWas).length && JSON.stringify(depsOf(repo, 'plugins/marrow-cursor')) === JSON.stringify(depsNow)
-      && lockMcp(repo, 'plugins/marrow') === PINNED_VERSION && lockMcp(repo, 'plugins/marrow-cursor') === PINNED_VERSION,
-    'T2-13 plugin dependencies: only @getmarrow/mcp moved, from 3.9.105 to exactly 3.9.109 (both package.json and both lockfiles), the SDK and every other dependency are unchanged');
+      && lockMcp(repo, 'plugins/marrow') === PINNED_VERSION && lockMcp(repo, 'plugins/marrow-cursor') === PINNED_VERSION
+      && lockSdk(repo, 'plugins/marrow') === PINNED_SDK_VERSION && lockSdk(repo, 'plugins/marrow-cursor') === PINNED_SDK_VERSION,
+    'T2-13 plugin dependencies: only @getmarrow/mcp (from 3.9.105 to the pinned 3.9.116) and @getmarrow/sdk (from 3.7.67 to 3.8.0) moved (both package.json and both lockfiles), every other dependency is unchanged');
     const check = spawnSync(process.execPath, [path.join(repo, 'tools', 'check.cjs')], { cwd: repo, encoding: 'utf8', env: env() });
     const fails = (check.stdout || '').split('\n').filter((l) => l.startsWith('FAIL')).map((l) => l.replace(/:.*/, ''));
     const failsOf = (dir) => (spawnSync(process.execPath, [path.join(dir, 'tools', 'check.cjs')], { cwd: dir, encoding: 'utf8', env: env() }).stdout || '').split('\n').filter((l) => l.startsWith('FAIL')).map((l) => l.replace(/:.*/, ''));

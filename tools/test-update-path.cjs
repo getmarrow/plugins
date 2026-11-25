@@ -9,10 +9,10 @@ const path = require('path');
 const repo = path.resolve(process.argv[2] || path.join(__dirname, '..'));
 const UPDATE_COMMAND = 'npx @getmarrow/install@latest update';
 const SLASH_WORDS = ['/reload-plugins', '/marrow:update'];
-const PLUGIN_VERSION = '0.2.10';
-const CURSOR_VERSION = '0.1.10';
-const MCP_VERSION = '3.9.115';
-const SDK_VERSION = '3.7.67';
+const PLUGIN_VERSION = '0.2.11';
+const CURSOR_VERSION = '0.1.11';
+const MCP_VERSION = '3.9.116';
+const SDK_VERSION = '3.8.0';
 const SHARED_FILES = ['package.json', 'package-lock.json', 'scripts/marrow-launch.cjs', 'scripts/mcp-manifest.json'];
 
 let pass = 0;

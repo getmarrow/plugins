@@ -1,12 +1,12 @@
 {
   "schema": "marrow-plugin-mcp-manifest.v1",
   "mcp": {
-    "version": "3.9.115",
-    "integrity": "sha512-42V7cmxSqY1/nZGWnjLWcHNqPMUgg4YXISmn0n7gPHec4SIB8UrF5X6OwZxhCHPPq6tXXoRq1lSFnofGuMwZBw=="
+    "version": "3.9.116",
+    "integrity": "sha512-btIV6FJCR4lry+XEU08tNxYzqktCRXDobTGG9QSmE13HTSLMPIOzF1P8kC+2ogy6TkR9RpTgPfXzlQgA4pB36Q=="
   },
   "sdk": {
-    "version": "3.7.67",
-    "integrity": "sha512-0Lwg4XLxm9eXxMgQtFAH1y4mXi9CXg3poQlGbeK0AW+EHP+yfUWQUH4d1XYO03QNzwHLAYKfARDmnl5GpBnKUw=="
+    "version": "3.8.0",
+    "integrity": "sha512-XsnHFZ8iXQl6ZdqLKZF+lKXkRQcdXXtNZD6lShnYsMwjJ6kvx+JN7lxxgipL1fRX8f4SeoYx6QDQGrl2m1XmhA=="
   },
   "bin": "@getmarrow/mcp/dist/cli.js",
   "files": [
@@ -336,15 +336,19 @@
     "@getmarrow/sdk/dist/runtime-gate-verdict.d.ts.map",
     "@getmarrow/sdk/dist/runtime-gate-verdict.js",
     "@getmarrow/sdk/dist/runtime-gate-verdict.js.map",
+    "@getmarrow/sdk/dist/signed-records.d.ts",
+    "@getmarrow/sdk/dist/signed-records.d.ts.map",
+    "@getmarrow/sdk/dist/signed-records.js",
+    "@getmarrow/sdk/dist/signed-records.js.map",
     "@getmarrow/sdk/dist/types.d.ts",
     "@getmarrow/sdk/dist/types.d.ts.map",
     "@getmarrow/sdk/dist/types.js",
     "@getmarrow/sdk/dist/types.js.map",
     "@getmarrow/sdk/package.json"
   ],
-  "sha256": "ac7c568eee9e4d4bb45349395b285fb9b65abe5d82b3283af873f45ad0b0a665",
+  "sha256": "8200a3c97a04b4eb2136a907c0ab082f208c447258e7cfee530975fab0e37f17",
   "source": {
     "repository": "getmarrow/marrow-mcp",
-    "commit": "d3dea44c4b213975ceb71458a4951ed4d1fd3db3"
+    "commit": "2606372056876e7a210cebad3e3698a3414fb250"
   }
 }
